@@ -35,9 +35,14 @@ import java.util.List;
  *            staff member who acknowledged it, or null
  * @param remedy
  *            what the restaurant offers affected customers, or null
+ * @param status
+ *            PENDING_REVIEW, ACTIVE or DISMISSED; for a pending customer report
+ *            the suspect foods are the candidates staff choose from
+ * @param reviewedBy
+ *            staff member who confirmed or dismissed a customer report, or null
  */
 public record IncidentDto(Long id, String source, String allergen, Long sourceOrderId, List<Long> suspectFoodIds,
         List<String> suspectFoodNames, LocalDateTime windowStart, LocalDateTime windowEnd, LocalDateTime reportedAt,
         Integer exposedOrderCount, Integer notifiedCount, LocalDateTime restaurantAcknowledgedAt,
-        String acknowledgedBy, String remedy) {
+        String acknowledgedBy, String remedy, String status, String reviewedBy) {
 }

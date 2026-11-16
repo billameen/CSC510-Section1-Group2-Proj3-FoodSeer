@@ -108,7 +108,7 @@ class IncidentControllerTest {
 
     private IncidentDto summary(final long id, final String remedy) {
         return new IncidentDto(id, "RESTAURANT", "PEANUT", null, List.of(10L), List.of("COOKIES"),
-                NOON.minusHours(1), NOON.plusHours(1), NOON, 3, 1, null, null, remedy);
+                NOON.minusHours(1), NOON.plusHours(1), NOON, 3, 1, null, null, remedy, "ACTIVE", null);
     }
 
     // POST /api/incidents (restaurant report)
@@ -217,7 +217,58 @@ class IncidentControllerTest {
                 .andExpect(jsonPath("$[0].id").value(1))
                 .andExpect(jsonPath("$[0].allergen").value("PEANUT"))
                 .andExpect(jsonPath("$[0].suspectFoodNames[0]").value("COOKIES"))
-                .andExpect(jsonPath("$[0].notifiedCount").value(1));
+                .andExpect(jsonPath("$[0].notifiedCount").value(1))
+                .andExpect(jsonPath("$[0].status").value("ACTIVE"));
+    }
+
+    // POST /api/incidents/{id}/confirm and /dismiss (staff review of customer reports)
+    @ParameterizedTest
+    @ValueSource(strings = {"staff", "admin"})
+    void staffAndAdminCanConfirmAndSeeCounts(final String login) throws Exception {
+        when(traceService.confirmIncident(7L, login, List.of(10L))).thenReturn(resultWithCounts(7L, 4, 2));
+
+        mvc.perform(post("/api/incidents/7/confirm").header("Authorization", bearer(login))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"foodIds\":[10]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.incidentId").value(7))
+                .andExpect(jsonPath("$.exposedOrderCount").value(4))
+                .andExpect(jsonPath("$.notifiedCount").value(2));
+        verify(traceService).confirmIncident(7L, login, List.of(10L));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"alice", "driver1"})
+    void customersAndDriversCannotConfirmOrDismiss(final String login) throws Exception {
+        mvc.perform(post("/api/incidents/7/confirm").header("Authorization", bearer(login))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"foodIds\":[10]}"))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/incidents/7/dismiss").header("Authorization", bearer(login)))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(traceService);
+    }
+
+    @Test
+    void confirmingAReportThatIsNotPendingIsBadRequest() throws Exception {
+        final String message = "Only a customer report waiting for review can be confirmed or dismissed; this one is"
+                + " ACTIVE.";
+        when(traceService.confirmIncident(7L, "staff", List.of(10L))).thenThrow(new IllegalArgumentException(message));
+
+        mvc.perform(post("/api/incidents/7/confirm").header("Authorization", bearer("staff"))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"foodIds\":[10]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(message));
+    }
+
+    @Test
+    void staffCanDismissAPendingReport() throws Exception {
+        final IncidentDto dismissed = new IncidentDto(7L, "CUSTOMER", "PEANUT", 5L, List.of(10L), List.of("COOKIES"),
+                NOON.minusHours(2), NOON.plusHours(2), NOON, 0, 0, null, null, null, "DISMISSED", "staff");
+        when(traceService.dismissIncident(7L, "staff")).thenReturn(dismissed);
+
+        mvc.perform(post("/api/incidents/7/dismiss").header("Authorization", bearer("staff")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("DISMISSED"))
+                .andExpect(jsonPath("$.reviewedBy").value("staff"));
     }
 
     @ParameterizedTest

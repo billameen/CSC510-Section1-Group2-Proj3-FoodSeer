@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import FoodSeer.constant.IncidentSource;
+import FoodSeer.constant.IncidentStatus;
 import FoodSeer.dto.IncidentDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Incident;
@@ -109,6 +110,7 @@ public class TraceServiceImpl implements TraceService {
 
         final Incident incident = new Incident();
         incident.setSource(IncidentSource.RESTAURANT);
+        incident.setStatus(IncidentStatus.ACTIVE);
         incident.setAllergen(normalizedAllergen);
         incident.setReporterUsername(reporterUsername);
         incident.setSourceOrderId(null);
@@ -166,7 +168,18 @@ public class TraceServiceImpl implements TraceService {
         incident.setWindowStart(order.getCreatedAt().minusHours(windowHours));
         incident.setWindowEnd(order.getCreatedAt().plusHours(windowHours));
 
-        return traceAndNotify(incident, suspectFoods);
+        // Spiral review option (a): a customer report alerts nobody until staff
+        // confirm which dish was at fault. The suspects saved here are the
+        // candidates staff choose from.
+        incident.setStatus(IncidentStatus.PENDING_REVIEW);
+        final Set<Long> candidateIds = new LinkedHashSet<>();
+        for (final Food food : suspectFoods) {
+            candidateIds.add(food.getId());
+        }
+        incident.setSuspectFoodIds(candidateIds);
+        incident.setReportedAt(LocalDateTime.now());
+        final Incident savedIncident = incidentRepository.save(incident);
+        return new TraceResult(savedIncident, Collections.emptyList(), Collections.emptyList());
     }
 
     /**
@@ -185,7 +198,10 @@ public class TraceServiceImpl implements TraceService {
             suspectIds.add(food.getId());
         }
         incident.setSuspectFoodIds(suspectIds);
-        incident.setReportedAt(LocalDateTime.now());
+        // A confirmed customer report keeps the time the customer filed it.
+        if (incident.getReportedAt() == null) {
+            incident.setReportedAt(LocalDateTime.now());
+        }
         final Incident savedIncident = incidentRepository.save(incident);
 
         final List<Order> exposedOrders = findExposedOrders(suspectFoods, incident.getWindowStart(),
@@ -311,6 +327,59 @@ public class TraceServiceImpl implements TraceService {
     }
 
     @Override
+    @Transactional
+    public TraceResult confirmIncident(final Long incidentId, final String staffUsername,
+            final List<Long> confirmedFoodIds) {
+        requireReporter(staffUsername);
+        final Incident incident = requirePending(incidentId);
+        if (confirmedFoodIds == null || confirmedFoodIds.isEmpty()) {
+            throw new IllegalArgumentException("Choose at least one dish to confirm.");
+        }
+        for (final Long foodId : confirmedFoodIds) {
+            if (foodId == null || !incident.getSuspectFoodIds().contains(foodId)) {
+                throw new IllegalArgumentException(
+                        "Food " + foodId + " was not in the order this reaction was reported on.");
+            }
+        }
+        final List<Food> confirmedFoods = loadFoods(confirmedFoodIds);
+
+        incident.setStatus(IncidentStatus.ACTIVE);
+        incident.setReviewedBy(staffUsername);
+        incident.setReviewedAt(LocalDateTime.now());
+        return traceAndNotify(incident, confirmedFoods);
+    }
+
+    @Override
+    @Transactional
+    public IncidentDto dismissIncident(final Long incidentId, final String staffUsername) {
+        requireReporter(staffUsername);
+        final Incident incident = requirePending(incidentId);
+        incident.setStatus(IncidentStatus.DISMISSED);
+        incident.setReviewedBy(staffUsername);
+        incident.setReviewedAt(LocalDateTime.now());
+        incident.setExposedOrderCount(0);
+        incident.setNotifiedCount(0);
+        return describe(incidentRepository.save(incident));
+    }
+
+    /**
+     * Loads an incident that is waiting for staff review.
+     */
+    private Incident requirePending(final Long incidentId) {
+        if (incidentId == null) {
+            throw new IllegalArgumentException("An incident id is required.");
+        }
+        final Incident incident = incidentRepository.findById(incidentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Incident does not exist with id " + incidentId));
+        if (incident.getStatus() != IncidentStatus.PENDING_REVIEW) {
+            throw new IllegalArgumentException(
+                    "Only a customer report waiting for review can be confirmed or dismissed; this one is "
+                            + incident.getStatus() + ".");
+        }
+        return incident;
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<IncidentDto> listIncidents() {
         final List<IncidentDto> summaries = new ArrayList<>();
@@ -373,7 +442,8 @@ public class TraceServiceImpl implements TraceService {
         return new IncidentDto(incident.getId(), source, incident.getAllergen(), incident.getSourceOrderId(), foodIds,
                 foodNames, incident.getWindowStart(), incident.getWindowEnd(), incident.getReportedAt(),
                 incident.getExposedOrderCount(), incident.getNotifiedCount(), incident.getRestaurantAcknowledgedAt(),
-                incident.getAcknowledgedBy(), incident.getRemedy());
+                incident.getAcknowledgedBy(), incident.getRemedy(), incident.getStatus().name(),
+                incident.getReviewedBy());
     }
 
     private void requireReporter(final String reporterUsername) {
