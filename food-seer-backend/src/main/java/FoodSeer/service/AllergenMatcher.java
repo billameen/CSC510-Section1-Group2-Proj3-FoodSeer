@@ -1,6 +1,7 @@
 package FoodSeer.service;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -45,6 +46,9 @@ public final class AllergenMatcher {
     /** For group terms, every specific substance the group covers. */
     private static final Map<String, Set<String>> GROUPS = new HashMap<>();
 
+    /** Words that start a food tag saying the food does NOT contain something. */
+    private static final Set<String> NEGATING_PREFIX = Set.of("NO", "NON", "WITHOUT");
+
     static {
         LEADING_FILLER.add("NO");
         LEADING_FILLER.add("NON");
@@ -78,6 +82,7 @@ public final class AllergenMatcher {
         ALIASES.put("CRAWFISH", "CRAYFISH");
         ALIASES.put("SULPHITE", "SULFITE");
         ALIASES.put("WHEAT FLOUR", "WHEAT");
+        ALIASES.put("TAHINI", "SESAME");
 
         // Groups are listed so that a group is defined after the groups it contains.
         addGroup("TREE NUT", "ALMOND", "WALNUT", "CASHEW", "PECAN", "PISTACHIO", "HAZELNUT", "MACADAMIA",
@@ -210,18 +215,51 @@ public final class AllergenMatcher {
     /**
      * Expands a normalized term to the set of specific substances it stands for.
      *
+     * A multi-word term that is not a known alias or group, such as "EGG
+     * WHITE" or "SOY SAUCE", also covers the substances of each of its words,
+     * so it overlaps "EGG" or "SOY".
+     *
      * @param normalizedTerm
      *            a term already passed through {@link #normalizeTerm(String)}
-     * @return the substances covered; just the term itself if it is not a known
-     *         group
+     * @return the substances covered; the term itself if it is not a known
+     *         group, plus the substances of each word if it has several words
      */
     static Set<String> atomsOf(final String normalizedTerm) {
-        final String canonical = ALIASES.containsKey(normalizedTerm) ? ALIASES.get(normalizedTerm) : normalizedTerm;
+        final Set<String> known = knownAtomsOf(normalizedTerm);
+        if (known != null || !normalizedTerm.contains(" ")) {
+            return known != null ? known : Collections.singleton(normalizedTerm);
+        }
+        final Set<String> atoms = new LinkedHashSet<>();
+        atoms.add(normalizedTerm);
+        for (final String word : normalizedTerm.split(" ")) {
+            final Set<String> wordAtoms = knownAtomsOf(word);
+            if (wordAtoms != null) {
+                atoms.addAll(wordAtoms);
+            } else {
+                atoms.add(word);
+            }
+        }
+        return atoms;
+    }
+
+    /**
+     * Looks a term up in the alias and group tables.
+     *
+     * @param term
+     *            a normalized term or a single normalized word
+     * @return the term's group substances, the canonical term in a singleton
+     *         set if it is an alias, or null if the tables don't know it
+     */
+    private static Set<String> knownAtomsOf(final String term) {
+        final String canonical = ALIASES.containsKey(term) ? ALIASES.get(term) : term;
         final Set<String> group = GROUPS.get(canonical);
         if (group != null) {
             return group;
         }
-        return Collections.singleton(canonical);
+        if (!canonical.equals(term)) {
+            return Collections.singleton(canonical);
+        }
+        return null;
     }
 
     /**
@@ -267,7 +305,7 @@ public final class AllergenMatcher {
         }
         final Set<String> incidentAtoms = atomsOf(incidentTerm);
         for (final String tag : foodTags) {
-            final String term = normalizeTerm(tag);
+            final String term = normalizeTerm(removeFreeFromClaims(tag));
             if (term.isEmpty()) {
                 continue;
             }
@@ -276,5 +314,41 @@ public final class AllergenMatcher {
             }
         }
         return false;
+    }
+
+    /**
+     * Removes the "free-from" part of a food tag, because a free-from word
+     * means the opposite on a food than in a customer's restrictions. In a
+     * restriction, "dairy-free" means "avoid dairy", so {@link #normalizeTerm}
+     * drops the filler and keeps DAIRY. On a food, "dairy-free" means "contains
+     * no dairy", so DAIRY must be dropped instead.
+     * <ul>
+     * <li>"DAIRY-FREE", "NO NUTS", "NON-DAIRY CREAMER": nothing is declared.</li>
+     * <li>"GLUTEN FREE BREAD": only "BREAD" is kept.</li>
+     * <li>"SUGAR-FREE PEANUT BUTTER": "PEANUT BUTTER" is kept.</li>
+     * <li>"FREE RANGE EGGS": unchanged, because FREE does not follow an
+     * ingredient here.</li>
+     * </ul>
+     *
+     * @param rawTag
+     *            a food's allergen tag as stored, may be null
+     * @return the part of the tag that names what the food does contain, still
+     *         to be normalized; empty if the whole tag is a free-from claim
+     */
+    static String removeFreeFromClaims(final String rawTag) {
+        if (rawTag == null) {
+            return "";
+        }
+        final String[] words = rawTag.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", " ").trim().split(" ");
+        if (NEGATING_PREFIX.contains(words[0])) {
+            return "";
+        }
+        int start = 0;
+        for (int i = 1; i < words.length; i++) {
+            if ("FREE".equals(words[i])) {
+                start = i + 1;
+            }
+        }
+        return String.join(" ", Arrays.asList(words).subList(start, words.length));
     }
 }

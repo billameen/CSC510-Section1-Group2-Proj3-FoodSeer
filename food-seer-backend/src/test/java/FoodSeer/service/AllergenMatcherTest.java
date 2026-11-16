@@ -308,4 +308,35 @@ public class AllergenMatcherTest {
         assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("DAIRY-FREE"), "milk"),
                 "A dish tagged 'DAIRY-FREE' must not count as containing milk.");
     }
+
+    // Free-from claims mean opposite things on a food and in a restriction.
+
+    @Test
+    public void testFreeFromStillMeansAvoidInARestriction() {
+        assertTrue(AllergenMatcher.restrictionsAffectedBy("dairy-free", "milk"),
+                "A customer who saved 'dairy-free' avoids dairy, so a milk incident must reach them.");
+        assertTrue(AllergenMatcher.restrictionsAffectedBy("gluten free bread", "wheat"),
+                "A customer who saved 'gluten free bread' avoids gluten.");
+    }
+
+    @Test
+    public void testNegatedFoodTagsDeclareNothing() {
+        assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("NO NUTS"), "peanut"));
+        assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("NON-DAIRY CREAMER"), "milk"));
+        assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("Peanut-Free"), "peanut"));
+    }
+
+    @Test
+    public void testWordsAfterAFreeFromClaimAreStillDeclared() {
+        assertTrue(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("SUGAR-FREE PEANUT BUTTER"), "peanut"),
+                "Only the sugar is absent; the peanut butter is still in the dish.");
+        assertTrue(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("GLUTEN FREE BREAD", "EGGS"), "egg"),
+                "Another tag on the same dish still counts.");
+    }
+
+    @Test
+    public void testFreeAtTheStartIsNotAFreeFromClaim() {
+        assertTrue(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("FREE RANGE EGGS"), "egg"),
+                "'Free range eggs' are eggs. Treating FREE as negation here would hide a real allergen.");
+    }
 }
