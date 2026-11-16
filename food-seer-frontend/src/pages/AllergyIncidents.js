@@ -6,12 +6,24 @@ import {
   getIncidents,
   reportRestaurantIncident,
   acknowledgeIncident,
+  confirmIncident,
+  dismissIncident,
 } from '../services/api';
 import { ALLERGEN_SUGGESTIONS, formatDateTime, toDateTimeInputValue } from '../components/allergyOptions';
 
-// Staff and admin page: report a possible cross-contact incident, then see
-// every incident and attach what the restaurant offers affected customers.
-// Customers are warned privately; this page shows counts, never their names.
+// Describes how many orders a trace found and how many customers it warned.
+const describeTrace = (exposedOrderCount, notifiedCount) => {
+  const customerWord = notifiedCount === 1 ? 'customer' : 'customers';
+  const orderWord = exposedOrderCount === 1 ? 'order' : 'orders';
+  return `${exposedOrderCount} ${orderWord} fell in the window, and `
+    + `${notifiedCount} ${customerWord} with this allergy were warned privately.`;
+};
+
+// Staff and admin page: report a possible cross-contact incident, review the
+// reactions customers report, then see every incident and attach what the
+// restaurant offers affected customers. A customer report warns nobody until
+// staff confirm which dish was at fault. Customers are warned privately; this
+// page shows counts, never their names.
 const AllergyIncidents = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -32,6 +44,12 @@ const AllergyIncidents = () => {
   const [remedyDrafts, setRemedyDrafts] = useState({});
   const [acknowledging, setAcknowledging] = useState({});
   const [listError, setListError] = useState('');
+  const [listSuccess, setListSuccess] = useState('');
+
+  // Dishes staff have ticked on each pending report, by incident id. Nothing
+  // starts ticked, so confirming always means choosing the dish.
+  const [reviewChoices, setReviewChoices] = useState({});
+  const [reviewing, setReviewing] = useState({});
 
   const loadIncidents = async () => {
     try {
@@ -99,11 +117,8 @@ const AllergyIncidents = () => {
     setSubmitting(true);
     try {
       const result = await reportRestaurantIncident(allergen.trim(), selectedFoodIds, windowStart, windowEnd);
-      const customerWord = result.notifiedCount === 1 ? 'customer' : 'customers';
-      const orderWord = result.exposedOrderCount === 1 ? 'order' : 'orders';
       setFormSuccess(
-        `Incident #${result.incidentId} saved. ${result.exposedOrderCount} ${orderWord} fell in the window, and `
-          + `${result.notifiedCount} ${customerWord} with this allergy were warned privately.`
+        `Incident #${result.incidentId} saved. ${describeTrace(result.exposedOrderCount, result.notifiedCount)}`
       );
       setAllergen('');
       setSelectedFoodIds([]);
@@ -112,6 +127,55 @@ const AllergyIncidents = () => {
       setFormError(error.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const toggleReviewChoice = (incidentId, foodId) => {
+    const chosen = reviewChoices[incidentId] || [];
+    const updated = chosen.includes(foodId)
+      ? chosen.filter((id) => id !== foodId)
+      : [...chosen, foodId];
+    setReviewChoices({ ...reviewChoices, [incidentId]: updated });
+  };
+
+  const handleConfirm = async (incidentId) => {
+    setListError('');
+    setListSuccess('');
+    const chosen = reviewChoices[incidentId] || [];
+    if (chosen.length === 0) {
+      setListError('Please tick the dish that carried the allergen before confirming.');
+      return;
+    }
+    setReviewing({ ...reviewing, [incidentId]: true });
+    try {
+      const result = await confirmIncident(incidentId, chosen);
+      setListSuccess(
+        `Incident #${result.incidentId} confirmed. ${describeTrace(result.exposedOrderCount, result.notifiedCount)}`
+      );
+      setReviewChoices({ ...reviewChoices, [incidentId]: [] });
+      await loadIncidents();
+    } catch (error) {
+      setListError(error.message);
+    } finally {
+      setReviewing({ ...reviewing, [incidentId]: false });
+    }
+  };
+
+  const handleDismiss = async (incidentId) => {
+    setListError('');
+    setListSuccess('');
+    if (!window.confirm(`Dismiss incident #${incidentId}? Nobody will be warned about it.`)) {
+      return;
+    }
+    setReviewing({ ...reviewing, [incidentId]: true });
+    try {
+      await dismissIncident(incidentId);
+      setListSuccess(`Incident #${incidentId} dismissed. Nobody was warned.`);
+      await loadIncidents();
+    } catch (error) {
+      setListError(error.message);
+    } finally {
+      setReviewing({ ...reviewing, [incidentId]: false });
     }
   };
 
@@ -207,6 +271,7 @@ const AllergyIncidents = () => {
 
       <h2 className="trace-section-title">All incidents</h2>
       {listError && <div className="trace-error">{listError}</div>}
+      {listSuccess && <div className="trace-success">{listSuccess}</div>}
 
       {incidents.length === 0 ? (
         <div className="no-orders">
@@ -220,9 +285,17 @@ const AllergyIncidents = () => {
                 <h3>
                   Incident #{incident.id}: {incident.allergen}
                 </h3>
-                <span className={`status-badge ${incident.restaurantAcknowledgedAt ? 'fulfilled' : 'pending'}`}>
-                  {incident.restaurantAcknowledgedAt ? '✓ Acknowledged' : '⏳ Needs a response'}
-                </span>
+                {incident.status === 'PENDING_REVIEW' && (
+                  <span className="status-badge pending">🔎 Waiting for review</span>
+                )}
+                {incident.status === 'DISMISSED' && (
+                  <span className="status-badge">✕ Dismissed</span>
+                )}
+                {incident.status !== 'PENDING_REVIEW' && incident.status !== 'DISMISSED' && (
+                  <span className={`status-badge ${incident.restaurantAcknowledgedAt ? 'fulfilled' : 'pending'}`}>
+                    {incident.restaurantAcknowledgedAt ? '✓ Acknowledged' : '⏳ Needs a response'}
+                  </span>
+                )}
               </div>
 
               <p>
@@ -238,10 +311,58 @@ const AllergyIncidents = () => {
               <p>
                 <strong>Window:</strong> {formatDateTime(incident.windowStart)} to {formatDateTime(incident.windowEnd)}
               </p>
-              <p>
-                <strong>Orders in the window:</strong> {incident.exposedOrderCount ?? 0} ·{' '}
-                <strong>Customers warned:</strong> {incident.notifiedCount ?? 0}
-              </p>
+              {incident.status === 'PENDING_REVIEW' ? (
+                <div className="trace-review">
+                  <p className="trace-muted">
+                    Nobody has been warned yet. Tick the dish that carried {incident.allergen}, then confirm. Only
+                    customers who ordered a ticked dish in the window and have this allergy saved will be warned.
+                  </p>
+                  <div className="trace-dish-grid">
+                    {incident.suspectFoodIds.map((foodId, index) => {
+                      const ticked = (reviewChoices[incident.id] || []).includes(foodId);
+                      return (
+                        <label key={foodId} className={`trace-dish ${ticked ? 'selected' : ''}`}>
+                          <input
+                            type="checkbox"
+                            checked={ticked}
+                            onChange={() => toggleReviewChoice(incident.id, foodId)}
+                          />
+                          <span>{incident.suspectFoodNames[index]}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="trace-ack">
+                    <button
+                      type="button"
+                      className="create-button"
+                      disabled={reviewing[incident.id] === true}
+                      onClick={() => handleConfirm(incident.id)}
+                    >
+                      Confirm and warn customers
+                    </button>
+                    <button
+                      type="button"
+                      className="back-button"
+                      disabled={reviewing[incident.id] === true}
+                      onClick={() => handleDismiss(incident.id)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p>
+                  <strong>Orders in the window:</strong> {incident.exposedOrderCount ?? 0} ·{' '}
+                  <strong>Customers warned:</strong> {incident.notifiedCount ?? 0}
+                </p>
+              )}
+
+              {incident.reviewedBy && (
+                <p className="trace-muted">
+                  {incident.status === 'DISMISSED' ? 'Dismissed' : 'Confirmed'} by {incident.reviewedBy}
+                </p>
+              )}
 
               {incident.remedy && (
                 <div className="trace-remedy">
@@ -252,23 +373,25 @@ const AllergyIncidents = () => {
                 </div>
               )}
 
-              <div className="trace-ack">
-                <input
-                  type="text"
-                  value={remedyDrafts[incident.id] || ''}
-                  onChange={(event) => setRemedyDrafts({ ...remedyDrafts, [incident.id]: event.target.value })}
-                  placeholder={incident.remedy ? 'Update the offer' : 'What do you offer? For example: Full refund or a free remake'}
-                  maxLength={500}
-                />
-                <button
-                  type="button"
-                  className="create-button"
-                  disabled={acknowledging[incident.id] === true}
-                  onClick={() => handleAcknowledge(incident.id)}
-                >
-                  {incident.remedy ? 'Update offer' : 'Acknowledge'}
-                </button>
-              </div>
+              {incident.status !== 'PENDING_REVIEW' && incident.status !== 'DISMISSED' && (
+                <div className="trace-ack">
+                  <input
+                    type="text"
+                    value={remedyDrafts[incident.id] || ''}
+                    onChange={(event) => setRemedyDrafts({ ...remedyDrafts, [incident.id]: event.target.value })}
+                    placeholder={incident.remedy ? 'Update the offer' : 'What do you offer? For example: Full refund or a free remake'}
+                    maxLength={500}
+                  />
+                  <button
+                    type="button"
+                    className="create-button"
+                    disabled={acknowledging[incident.id] === true}
+                    onClick={() => handleAcknowledge(incident.id)}
+                  >
+                    {incident.remedy ? 'Update offer' : 'Acknowledge'}
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

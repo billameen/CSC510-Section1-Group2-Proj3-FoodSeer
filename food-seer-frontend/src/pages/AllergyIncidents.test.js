@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -10,6 +10,8 @@ import {
   getIncidents,
   reportRestaurantIncident,
   acknowledgeIncident,
+  confirmIncident,
+  dismissIncident,
 } from '../services/api';
 
 jest.mock('../services/api', () => ({
@@ -18,6 +20,8 @@ jest.mock('../services/api', () => ({
   getIncidents: jest.fn(),
   reportRestaurantIncident: jest.fn(),
   acknowledgeIncident: jest.fn(),
+  confirmIncident: jest.fn(),
+  dismissIncident: jest.fn(),
 }));
 
 const openIncident = {
@@ -35,7 +39,26 @@ const openIncident = {
   restaurantAcknowledgedAt: null,
   acknowledgedBy: null,
   remedy: null,
+  status: 'ACTIVE',
+  reviewedBy: 'staff1',
 };
+
+// A customer's reaction that staff have not reviewed yet: nobody warned.
+const pendingIncident = {
+  ...openIncident,
+  id: 5,
+  sourceOrderId: 9,
+  suspectFoodIds: [30, 31],
+  suspectFoodNames: ['COOKIES', 'FRUIT SALAD'],
+  exposedOrderCount: 0,
+  notifiedCount: 0,
+  status: 'PENDING_REVIEW',
+  reviewedBy: null,
+};
+
+// The card for one incident, so its dish checkboxes are not confused with the
+// report form's dish checkboxes, which use the same dish names.
+const findCard = async (title) => (await screen.findByText(title)).closest('.trace-card');
 
 const renderPage = () => render(
   <MemoryRouter>
@@ -117,5 +140,96 @@ describe('AllergyIncidents', () => {
     userEvent.click(screen.getByText('Acknowledge'));
 
     await waitFor(() => expect(acknowledgeIncident).toHaveBeenCalledWith(4, 'Full refund'));
+  });
+
+  test('a pending customer report says nobody was warned and cannot be acknowledged yet', async () => {
+    getIncidents.mockResolvedValue([pendingIncident]);
+
+    renderPage();
+    const card = await findCard('Incident #5: PEANUT');
+
+    expect(within(card).getByText('🔎 Waiting for review')).toBeInTheDocument();
+    expect(within(card).getByText(/Nobody has been warned yet/)).toBeInTheDocument();
+    expect(within(card).queryByText('Acknowledge')).not.toBeInTheDocument();
+    expect(within(card).getByLabelText('COOKIES')).not.toBeChecked();
+    expect(within(card).getByLabelText('FRUIT SALAD')).not.toBeChecked();
+  });
+
+  test('confirming needs a ticked dish', async () => {
+    getIncidents.mockResolvedValue([pendingIncident]);
+
+    renderPage();
+    const card = await findCard('Incident #5: PEANUT');
+    userEvent.click(within(card).getByText('Confirm and warn customers'));
+
+    expect(await screen.findByText(/Please tick the dish that carried the allergen/)).toBeInTheDocument();
+    expect(confirmIncident).not.toHaveBeenCalled();
+  });
+
+  test('confirming sends only the ticked dish and shows the counts', async () => {
+    getIncidents.mockResolvedValue([pendingIncident]);
+    confirmIncident.mockResolvedValue({ incidentId: 5, exposedOrderCount: 1, notifiedCount: 1 });
+
+    renderPage();
+    const card = await findCard('Incident #5: PEANUT');
+    userEvent.click(within(card).getByLabelText('COOKIES'));
+    userEvent.click(within(card).getByText('Confirm and warn customers'));
+
+    expect(await screen.findByText(/Incident #5 confirmed\. 1 order fell in the window, and 1 customer/))
+      .toBeInTheDocument();
+    expect(confirmIncident).toHaveBeenCalledWith(5, [30]);
+    expect(getIncidents).toHaveBeenCalledTimes(2);
+  });
+
+  test('shows the backend message when confirming fails', async () => {
+    getIncidents.mockResolvedValue([pendingIncident]);
+    confirmIncident.mockRejectedValue(new Error('Food 99 was not in the order this reaction was reported on.'));
+
+    renderPage();
+    const card = await findCard('Incident #5: PEANUT');
+    userEvent.click(within(card).getByLabelText('COOKIES'));
+    userEvent.click(within(card).getByText('Confirm and warn customers'));
+
+    expect(await screen.findByText('Food 99 was not in the order this reaction was reported on.'))
+      .toBeInTheDocument();
+  });
+
+  test('dismissing asks first and does nothing if staff cancel', async () => {
+    getIncidents.mockResolvedValue([pendingIncident]);
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(false);
+
+    renderPage();
+    const card = await findCard('Incident #5: PEANUT');
+    userEvent.click(within(card).getByText('Dismiss'));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(dismissIncident).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  test('dismissing closes the report without warning anyone', async () => {
+    getIncidents.mockResolvedValue([pendingIncident]);
+    dismissIncident.mockResolvedValue({ ...pendingIncident, status: 'DISMISSED', reviewedBy: 'staff' });
+    const confirmSpy = jest.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderPage();
+    const card = await findCard('Incident #5: PEANUT');
+    userEvent.click(within(card).getByText('Dismiss'));
+
+    expect(await screen.findByText('Incident #5 dismissed. Nobody was warned.')).toBeInTheDocument();
+    expect(dismissIncident).toHaveBeenCalledWith(5);
+    confirmSpy.mockRestore();
+  });
+
+  test('a dismissed report shows who dismissed it and has no actions', async () => {
+    getIncidents.mockResolvedValue([{ ...pendingIncident, status: 'DISMISSED', reviewedBy: 'staff1' }]);
+
+    renderPage();
+    const card = await findCard('Incident #5: PEANUT');
+
+    expect(within(card).getByText('✕ Dismissed')).toBeInTheDocument();
+    expect(within(card).getByText('Dismissed by staff1')).toBeInTheDocument();
+    expect(within(card).queryByText('Acknowledge')).not.toBeInTheDocument();
+    expect(within(card).queryByText('Dismiss')).not.toBeInTheDocument();
   });
 });

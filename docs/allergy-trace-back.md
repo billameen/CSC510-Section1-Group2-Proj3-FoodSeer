@@ -9,20 +9,23 @@ FoodSeer now does. A report from the restaurant or from a customer starts a trac
 ## How it works
 
 1. **A report comes in.**
-   * Staff report that dishes may carry an allergen during a time window (Allergy Incidents page).
-   * A customer reports a reaction on one of their own orders (My Orders page). The window is 2 hours either side of that order (`foodseer.trace.window-hours`). If no dish in the order declares the allergen, every dish in it is treated as a suspect.
-2. **Trace.** Every order that contains a suspect dish and was placed inside the window is exposed.
-3. **Match.** A customer is warned if their saved restrictions overlap the allergen. Matching understands case, plurals, filler words and groups, so "peanut", "Peanuts" and "peanut allergy" match, "nuts" covers peanuts and tree nuts, and "fish" never matches "shellfish". Exact string matching, which FoodSeer used before, misses these; in the M0 eval it found under half of the truly exposed customers.
-4. **Notify.** Each affected customer gets one private notice. The reporter is never notified about their own report.
-5. **Respond.** Staff see every incident with counts only, acknowledge it and attach an offer. Customers then see that offer on their notice.
+   * Staff report that dishes may carry an allergen during a time window (Allergy Incidents page). This is traced straight away.
+   * A customer reports a reaction on one of their own orders (My Orders page). The window is 2 hours either side of that order (`foodseer.trace.window-hours`). If no dish in the order declares the allergen, every dish in it is a candidate. The report waits for staff review and warns nobody yet.
+2. **Review (customer reports only).** On the Allergy Incidents page, staff tick the dish that carried the allergen, chosen from the candidates, and press **Confirm and warn customers**. Only the ticked dishes are traced, over the window saved with the report. Staff can instead **Dismiss** the report, and nobody is warned. Incidents saved before review existed count as confirmed.
+3. **Trace.** Every order that contains a suspect dish and was placed inside the window is exposed.
+4. **Match.** A customer is warned if their saved restrictions overlap the allergen. Matching understands case, plurals, filler words and groups, so "peanut", "Peanuts" and "peanut allergy" match, "nuts" covers peanuts and tree nuts, and "fish" never matches "shellfish". Exact string matching, which FoodSeer used before, misses these; in the M0 eval it found under half of the truly exposed customers.
+5. **Notify.** Each affected customer gets one private notice. The reporter is never notified about their own report.
+6. **Respond.** Staff see every incident with its status and counts only, acknowledge it and attach an offer. Customers then see that offer on their notice.
 
 ## API
 
 | Method and path | Who | What |
 | :- | :- | :- |
 | `POST /api/incidents` | Staff, Admin | Report dishes, allergen and window. Returns the incident id and counts. |
-| `POST /api/incidents/reaction` | Customer | Report a reaction on your own order. Returns the incident id only. |
-| `GET /api/incidents` | Staff, Admin | Every incident, newest first, with counts and never customer names. |
+| `POST /api/incidents/reaction` | Customer | Report a reaction on your own order. It waits for staff review. Returns the incident id only. |
+| `GET /api/incidents` | Staff, Admin | Every incident, newest first, with its status (`PENDING_REVIEW`, `ACTIVE` or `DISMISSED`), counts and never customer names. |
+| `POST /api/incidents/{id}/confirm` | Staff, Admin | Confirm which candidate dishes in a pending customer report were at fault, as `{ "foodIds": [30] }`. Traces them and returns the incident id and counts. |
+| `POST /api/incidents/{id}/dismiss` | Staff, Admin | Close a pending customer report without warning anyone. |
 | `POST /api/incidents/{id}/acknowledge` | Staff, Admin | Acknowledge and attach an offer (1 to 500 characters). |
 | `GET /api/notifications/my` | Customer | Your notices, newest first, with the restaurant's offer. |
 | `GET /api/notifications/my/unread-count` | Customer | How many notices you have not acknowledged. |
@@ -40,6 +43,8 @@ Example restaurant report:
 2. Log in as staff, open **Allergy Incidents**, enter "Peanuts", tick COOKIES, keep the default window and press **Trace and warn customers**.
 3. Log back in as the customer: a banner and **Safety Notices** show the notice.
 4. As staff, type an offer and press **Acknowledge**. The customer's notice now shows it.
+5. As a customer with "Sesame" saved, order FRUIT SALAD only. As a second customer, order GARDEN SALAD and FRUIT SALAD, then on **My Orders** report a reaction to "Sesame" on that order. Neither salad declares sesame, so both are candidates. Nobody is warned yet.
+6. As staff, the report shows **Waiting for review** with both salads to choose from. Tick GARDEN SALAD and press **Confirm and warn customers**. The first customer is not warned, because they did not order GARDEN SALAD. Had staff ticked FRUIT SALAD, they would have been.
 
 ## Code map
 

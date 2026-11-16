@@ -139,13 +139,6 @@ public class IncidentController {
     }
 
     /**
-     * Turns bad input from the service into 400 Bad Request with its message.
-     *
-     * @param ex
-     *            the validation error
-     * @return 400 with the message
-     */
-    /**
      * Staff confirm which dishes in a pending customer report were at fault,
      * which traces them and alerts affected customers.
      *
@@ -187,6 +180,13 @@ public class IncidentController {
         return traceService.dismissIncident(id, authentication.getName());
     }
 
+    /**
+     * Turns bad input from the service into 400 Bad Request with its message.
+     *
+     * @param ex
+     *            the validation error
+     * @return 400 with the message
+     */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorDetails> handleBadInput(final IllegalArgumentException ex) {
         final ErrorDetails details = new ErrorDetails(new Date(), ex.getMessage(), "Invalid incident request");
