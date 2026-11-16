@@ -260,4 +260,52 @@ public class AllergenMatcherTest {
         assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("PEANUTS"), null));
         assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("PEANUTS"), "  "));
     }
+
+    // Held-out phrasings (Milestone 1, ALG-08).
+    //
+    // None of these phrases appear in M0TraceEval.FREE_TEXT. They check that a
+    // matcher change generalises to how real customers type, instead of only
+    // fitting the phrases the M0 simulator happens to use.
+
+    @Test
+    public void testHeldOutEggYolkMeansEgg() {
+        assertTrue(AllergenMatcher.restrictionsAffectedBy("egg yolk", "egg"),
+                "A customer who typed 'egg yolk' should be warned about an egg incident.");
+    }
+
+    @Test
+    public void testHeldOutSesameOilMeansSesame() {
+        assertTrue(AllergenMatcher.restrictionsAffectedBy("sesame oil", "sesame"),
+                "A customer who typed 'sesame oil' should be warned about a sesame incident.");
+    }
+
+    @Test
+    public void testHeldOutPeanutOilMeansPeanut() {
+        assertTrue(AllergenMatcher.restrictionsAffectedBy("peanut oil", "peanut"),
+                "A customer who typed 'peanut oil' should be warned about a peanut incident.");
+    }
+
+    @Test
+    public void testHeldOutWheyMeansMilk() {
+        assertTrue(AllergenMatcher.restrictionsAffectedBy("whey", "milk"),
+                "Whey is a milk protein, so a 'whey' customer should be warned about a milk incident.");
+    }
+
+    @Test
+    public void testHeldOutEdamameMeansSoy() {
+        assertTrue(AllergenMatcher.restrictionsAffectedBy("edamame", "soy"),
+                "Edamame is soybeans, so an 'edamame' customer should be warned about a soy incident.");
+    }
+
+    @Test
+    public void testHeldOutGlutenFreeFoodTagDoesNotDeclareWheat() {
+        assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("GLUTEN FREE BREAD"), "wheat"),
+                "A dish tagged 'GLUTEN FREE BREAD' must not count as containing wheat.");
+    }
+
+    @Test
+    public void testHeldOutDairyFreeFoodTagDoesNotDeclareMilk() {
+        assertFalse(AllergenMatcher.foodDeclaresAllergen(Arrays.asList("DAIRY-FREE"), "milk"),
+                "A dish tagged 'DAIRY-FREE' must not count as containing milk.");
+    }
 }
