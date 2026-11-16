@@ -631,7 +631,10 @@ public class M0TraceEval {
         });
         when(notificationRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        return new TraceServiceImpl(orderRepository, foodRepository, incidentRepository, notificationRepository, 2);
+        // Use production's default window, not a copy of it, so changing the
+        // default changes what M0 measures.
+        return new TraceServiceImpl(orderRepository, foodRepository, incidentRepository, notificationRepository,
+                TraceServiceImpl.DEFAULT_WINDOW_HOURS);
     }
 
     // Report

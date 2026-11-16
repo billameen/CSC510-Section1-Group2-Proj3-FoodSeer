@@ -54,6 +54,13 @@ public class TraceServiceImpl implements TraceService {
     static final int MAX_REMEDY_LENGTH = 500;
 
     /**
+     * Default for foodseer.trace.window-hours: hours before and after a
+     * customer's order that a customer report searches. The M0 eval uses this
+     * same constant, so it always measures the window production ships with.
+     */
+    public static final long DEFAULT_WINDOW_HOURS = 2;
+
+    /**
      * Creates the service.
      *
      * @param orderRepository
@@ -66,11 +73,12 @@ public class TraceServiceImpl implements TraceService {
      *            notifications
      * @param windowHours
      *            for customer reports, hours before and after the order to
-     *            search; set with foodseer.trace.window-hours, default 2
+     *            search; set with foodseer.trace.window-hours, default
+     *            {@link #DEFAULT_WINDOW_HOURS}
      */
     public TraceServiceImpl(final OrderRepository orderRepository, final FoodRepository foodRepository,
             final IncidentRepository incidentRepository, final NotificationRepository notificationRepository,
-            @Value("${foodseer.trace.window-hours:2}") final long windowHours) {
+            @Value("${foodseer.trace.window-hours:" + DEFAULT_WINDOW_HOURS + "}") final long windowHours) {
         if (windowHours < 0) {
             throw new IllegalArgumentException("The trace window cannot be negative.");
         }
