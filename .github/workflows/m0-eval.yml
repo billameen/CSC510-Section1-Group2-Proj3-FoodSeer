@@ -6,15 +6,15 @@ name: M0 Eval
 # floor, or not beating a baseline). The original 0.70 precision target was
 # revised by spiral review in Milestone 1; see docs/allergy-trace-back.md.
 #
-# It runs on pushes to main and Development-2, on pull requests into main,
+# It runs on pushes to main and development, on pull requests into either,
 # and on demand (Actions tab > M0 Eval > Run workflow). Feature branches
 # skip it so a red M0 check does not appear on every push.
 
 on:
   push:
-    branches: [main, Development-2]
+    branches: [main, development]
   pull_request:
-    branches: [main]
+    branches: [main, development]
   workflow_dispatch:
 
 permissions:
