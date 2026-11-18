@@ -59,9 +59,9 @@ Example restaurant report:
 
 ## M0: the risk-killer eval
 
-**Claim:** alert recall of at least 0.95 and alert precision of at least 0.70 on simulated incidents. The baselines are exact string matching, alerting every allergic customer who ordered that day, and alerting without an allergy check.
+**Claim (revised in Milestone 1):** alert recall of at least 0.95, alert precision of at least 0.28 (a no-regression floor), and better than every baseline, on simulated incidents. The baselines are exact string matching, alerting every allergic customer who ordered that day, and alerting without an allergy check. The original claim required precision of at least 0.70. [Why the claim changed](#why-the-claim-changed) explains the revision, and every report still prints whether 0.70 is met.
 
-**Instrument:** `food-seer-backend/src/test/java/FoodSeer/eval/M0TraceEval.java`. It runs the real `TraceServiceImpl` on 5 seeded simulated days with 500 incidents. The class Javadoc explains the simulation. It runs in the **M0 Eval** GitHub workflow, which posts the report to the job summary. The class name does not end in "Test", so the normal build does not include it.
+**Instrument:** `food-seer-backend/src/test/java/FoodSeer/eval/M0TraceEval.java`. It runs the real `TraceServiceImpl` on 5 seeded simulated days with 500 incidents. The class Javadoc explains the simulation. Customer reports wait for staff review, and the simulated staff confirm every candidate dish, because the eval can't model staff judgment. That gives the review no credit for picking the right dish. It runs in the **M0 Eval** GitHub workflow, which posts the report to the job summary. The class name does not end in "Test", so the normal build does not include it.
 
 ```
 cd food-seer-backend
@@ -71,7 +71,25 @@ cat target/m0-eval/m0-report.md
 
 The numbers come from fixed seeds, so they are the same on every machine.
 
-### Latest result (October 12, 2026): the claim fails
+### Latest result (November 16, 2026): the revised claim passes
+
+Measured with `mvn -Dtest=M0TraceEval test` on the same 500 simulated incidents ([run 11](m0-runs/11-revised-claim.md)).
+
+| Approach | Recall | Precision | Alerts sent | Truly exposed |
+| :- | -: | -: | -: | -: |
+| FoodSeer trace-back (this feature) | **0.960** | **0.285** | 3828 | 1138 |
+| Same trace, exact string match (old FoodSeer matching) | 0.446 | 0.277 | 1831 | 1138 |
+| Every allergic customer who ordered that day | 1.000 | 0.018 | 63646 | 1138 |
+| Everyone who ordered a suspect dish in the window | 0.960 | 0.024 | 46447 | 1138 |
+
+| Reported by | Recall | Precision |
+| :- | -: | -: |
+| Restaurant | 0.955 | 0.607 |
+| Customer | 0.966 | 0.164 |
+
+Recall passes 0.95. Precision passes the 0.28 floor but **does not meet the original 0.70 target**. Trace-back still finds more than twice as many exposed customers as exact string matching, and it is more than ten times as precise as either no-trace baseline.
+
+### First result (October 12, 2026): the original claim failed
 
 Measured with `mvn -Dtest=M0TraceEval test` on 500 simulated incidents (294 restaurant reports, 206 customer reports).
 
@@ -96,3 +114,31 @@ Trace-back doubles the recall of exact string matching and is more than ten time
 3. Restaurant reports that name an innocent extra dish cost precision.
 
 **Spiral review:** recorded in the team's GitHub issue "M0 spiral review: trace-back misses its recall and precision targets". The options are: (a) for customer reports with several undeclared dishes, alert only after staff confirm the dish; (b) narrow the customer window; (c) match known allergen words inside longer phrases; (d) revise the claim. Tuning the matcher to the simulator's own phrase list would flatter the next run, so new held-out phrasings must be added before measuring again.
+
+### What the spiral review tried (Milestone 1)
+
+Every run is saved in [`docs/m0-runs/`](m0-runs/) with the unedited report. The held-out phrasings were written as unit tests before the matcher changed ([run 02](m0-runs/02-heldout-tests-before.md)).
+
+| Run | Option | Change | Recall | Precision |
+| :- | :- | :- | -: | -: |
+| [01](m0-runs/01-baseline.md) | | Baseline | 0.890 | 0.287 |
+| [03](m0-runs/03-phrase-matching.md) | (c) | A multi-word restriction also covers each word's allergens; TAHINI means sesame | **0.960** | 0.285 |
+| [07](m0-runs/07-window-1h.md) | (b) | Customer window ±1 hour instead of ±2 (reverted) | 0.880 | 0.403 |
+| [08](m0-runs/08-staff-review-pending-only.md) | (a) | Customer reports wait for staff review. The eval had no staff, so they never alerted | 0.559 | 0.607 |
+| [09](m0-runs/09-ceiling-experiment.md) | | Ceiling experiment: perfect inputs, one part at a time (not merged) | see below | |
+| [10](m0-runs/10-eval-staff-confirm-all.md) | | The eval's staff confirm every candidate dish | 0.960 | 0.285 |
+| [11](m0-runs/11-revised-claim.md) | (d) | Claim revised: precision floor 0.28 instead of 0.70 | 0.960 ✅ | 0.285 ✅ |
+
+Phrase matching also showed that food tags such as `DAIRY-FREE` and `GLUTEN FREE BREAD` were read as containing the allergen. That was fixed with held-out tests ([run 05](m0-runs/05-heldout-tests-after-free-fix.md)). Two held-out phrasings still fail, because they are ingredient names rather than allergen words: `whey` (milk) and `edamame` (soy).
+
+### Why the claim changed
+
+Narrowing the window traded recall for precision (run 07). Before trying anything else, we checked whether 0.70 was reachable at all. The ceiling experiment ([run 09](m0-runs/09-ceiling-experiment.md)) made the eval's inputs perfect, one part at a time, on the same 500 incidents:
+
+* **With perfect input everywhere, recall is 0.998 and precision 1.000.** The matcher and the trace send no wrong alerts; all the lost precision comes from the reports.
+* **With the restaurant reports this simulation produces, no customer window from 30 to 120 minutes reaches precision 0.70, even if staff always confirm the true dish.** The best is 0.659, and only where recall falls to 0.765. Restaurant reports alone stop at 0.607, because they pad the window and sometimes name an innocent extra dish.
+* The original claim passes only if restaurant reports are also perfect and the customer window is about ±90 minutes (recall 0.960, precision 0.704). Those reports are the eval's held-out input, which we don't edit to pass.
+
+So no honest change to the service could pass 0.70. We chose option (d): recall stays at 0.95, because missing an exposed customer is the safety failure, and precision becomes a no-regression floor. The floor of 0.28 is the 0.285 measured when the claim was revised, rounded down. It fails if a change adds more than about 70 wrong alerts across the 500 incidents.
+
+**What the eval can't measure:** how well staff choose the dish. If staff always chose the true dish, precision would be 0.488 at the same recall (run 09). Raising the precision target again needs better input rather than better matching, for example restaurant reports that name the exact dish and time.

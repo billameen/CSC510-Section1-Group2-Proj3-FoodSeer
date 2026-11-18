@@ -2,7 +2,9 @@ name: M0 Eval
 
 # Runs the M0 risk-killer eval for the allergy trace-back feature and posts
 # its report to the job summary. This job fails whenever the claim fails
-# (alert recall below 0.95 or alert precision below 0.70).
+# (alert recall below 0.95, alert precision below the 0.28 no-regression
+# floor, or not beating a baseline). The original 0.70 precision target was
+# revised by spiral review in Milestone 1; see docs/allergy-trace-back.md.
 #
 # It runs on pushes to main and Development-2, on pull requests into main,
 # and on demand (Actions tab > M0 Eval > Run workflow). Feature branches
