@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
 
 import FoodSeer.constant.IncidentSource;
+import FoodSeer.constant.IncidentStatus;
 import FoodSeer.dto.IncidentDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Incident;
@@ -414,6 +415,137 @@ public class TraceServiceImplTest {
         return order;
     }
 
+    /**
+     * Alice reports a reaction on order 1, then staff confirm every candidate
+     * dish. Gives the same trace a customer report produced before staff
+     * review existed, so the trace rules below are still tested.
+     */
+    private TraceResult reportAndConfirmAll(final TraceServiceImpl traceService, final String allergen) {
+        final TraceResult pending = traceService.reportCustomerReaction("alice", 1L, allergen);
+        when(incidentRepository.findById(100L)).thenReturn(Optional.of(pending.getIncident()));
+        return traceService.confirmIncident(100L, "staff1",
+                new ArrayList<>(pending.getIncident().getSuspectFoodIds()));
+    }
+
+    // Customer report: staff review (spiral review option (a))
+    @Test
+    public void testCustomerReportWaitsForReviewAndAlertsNobody() {
+        final Food cookie = food(10, "COOKIES", "PEANUTS");
+        final Order mine = reporterOrder(user("alice", "PEANUTS"), cookie);
+        final Order other = order(2, user("bob", "PEANUTS"), NOON.plusMinutes(20), cookie);
+        stubFood(cookie, mine, other);
+
+        final TraceResult result = service.reportCustomerReaction("alice", 1L, "peanut");
+
+        assertEquals(IncidentStatus.PENDING_REVIEW, result.getIncident().getStatus());
+        assertEquals(new LinkedHashSet<>(Arrays.asList(10L)), result.getIncident().getSuspectFoodIds());
+        assertTrue(result.getNotifications().isEmpty());
+        assertTrue(result.getExposedOrderIds().isEmpty());
+        verify(orderRepository, never()).findOrdersContainingFood(any(Food.class));
+        verify(notificationRepository, never()).saveAll(any());
+    }
+
+    @Test
+    public void testRestaurantReportIsActiveStraightAway() {
+        final Food cookie = food(10, "COOKIES", "PEANUTS");
+        stubFood(cookie);
+
+        assertEquals(IncidentStatus.ACTIVE, restaurantReport("peanut", 10L).getIncident().getStatus());
+    }
+
+    @Test
+    public void testConfirmTracesOnlyTheConfirmedDish() {
+        final Food soup = food(10, "SOUP", "MILK");
+        final Food salad = food(11, "QUINOA SALAD");
+        final Order mine = reporterOrder(user("alice", "PEANUTS"), soup, salad);
+        final Order soupOrder = order(2, user("bob", "PEANUTS"), NOON.plusMinutes(5), soup);
+        final Order saladOrder = order(3, user("carol", "PEANUTS"), NOON.plusMinutes(6), salad);
+        stubFood(soup, mine, soupOrder);
+        stubFood(salad, mine, saladOrder);
+        final TraceResult pending = service.reportCustomerReaction("alice", 1L, "peanut");
+        final LocalDateTime reportedAt = pending.getIncident().getReportedAt();
+        when(incidentRepository.findById(100L)).thenReturn(Optional.of(pending.getIncident()));
+
+        final TraceResult result = service.confirmIncident(100L, "staff1", Arrays.asList(10L));
+
+        assertEquals(Arrays.asList("bob"), result.getNotifiedUsernames());
+        verify(orderRepository, never()).findOrdersContainingFood(salad);
+        final Incident incident = result.getIncident();
+        assertEquals(IncidentStatus.ACTIVE, incident.getStatus());
+        assertEquals(new LinkedHashSet<>(Arrays.asList(10L)), incident.getSuspectFoodIds());
+        assertEquals("staff1", incident.getReviewedBy());
+        assertNotNull(incident.getReviewedAt());
+        assertEquals(reportedAt, incident.getReportedAt(), "Confirming must keep the time the customer reported.");
+        assertEquals(NOON.minusHours(2), incident.getWindowStart());
+        assertEquals(1, incident.getNotifiedCount());
+    }
+
+    @Test
+    public void testConfirmRejectsADishThatWasNotACandidate() {
+        final Food cookie = food(10, "COOKIES", "PEANUTS");
+        final Order mine = reporterOrder(user("alice", "PEANUTS"), cookie);
+        stubFood(cookie, mine);
+        final TraceResult pending = service.reportCustomerReaction("alice", 1L, "peanut");
+        when(incidentRepository.findById(100L)).thenReturn(Optional.of(pending.getIncident()));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.confirmIncident(100L, "staff1", Arrays.asList(99L)));
+        assertThrows(IllegalArgumentException.class, () -> service.confirmIncident(100L, "staff1", null));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.confirmIncident(100L, "staff1", Collections.emptyList()));
+        assertEquals(IncidentStatus.PENDING_REVIEW, pending.getIncident().getStatus());
+        verify(notificationRepository, never()).saveAll(any());
+    }
+
+    @Test
+    public void testOnlyPendingReportsCanBeConfirmedOrDismissed() {
+        final Incident active = new Incident();
+        active.setStatus(IncidentStatus.ACTIVE);
+        final Incident dismissed = new Incident();
+        dismissed.setStatus(IncidentStatus.DISMISSED);
+        when(incidentRepository.findById(1L)).thenReturn(Optional.of(active));
+        when(incidentRepository.findById(2L)).thenReturn(Optional.of(dismissed));
+
+        assertThrows(IllegalArgumentException.class, () -> service.confirmIncident(1L, "staff1", Arrays.asList(10L)));
+        assertThrows(IllegalArgumentException.class, () -> service.dismissIncident(1L, "staff1"));
+        assertThrows(IllegalArgumentException.class, () -> service.confirmIncident(2L, "staff1", Arrays.asList(10L)));
+        assertThrows(IllegalArgumentException.class, () -> service.dismissIncident(2L, "staff1"));
+    }
+
+    @Test
+    public void testReviewingAnUnknownIncidentIsNotFound() {
+        when(incidentRepository.findById(77L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> service.confirmIncident(77L, "staff1", Arrays.asList(10L)));
+        assertThrows(ResourceNotFoundException.class, () -> service.dismissIncident(77L, "staff1"));
+        assertThrows(IllegalArgumentException.class, () -> service.dismissIncident(null, "staff1"));
+        assertThrows(IllegalArgumentException.class, () -> service.dismissIncident(77L, " "));
+    }
+
+    @Test
+    public void testDismissClosesTheReportAndAlertsNobody() {
+        final Food cookie = food(10, "COOKIES", "PEANUTS");
+        final Order mine = reporterOrder(user("alice", "PEANUTS"), cookie);
+        final Order other = order(2, user("bob", "PEANUTS"), NOON.plusMinutes(20), cookie);
+        stubFood(cookie, mine, other);
+        final TraceResult pending = service.reportCustomerReaction("alice", 1L, "peanut");
+        when(incidentRepository.findById(100L)).thenReturn(Optional.of(pending.getIncident()));
+
+        final IncidentDto summary = service.dismissIncident(100L, "staff1");
+
+        assertEquals("DISMISSED", summary.status());
+        assertEquals("staff1", summary.reviewedBy());
+        assertEquals(0, summary.notifiedCount());
+        verify(orderRepository, never()).findOrdersContainingFood(any(Food.class));
+        verify(notificationRepository, never()).saveAll(any());
+    }
+
+    @Test
+    public void testIncidentsSavedBeforeReviewExistedReadAsActive() {
+        assertEquals(IncidentStatus.ACTIVE, new Incident().getStatus());
+    }
+
     @Test
     public void testCustomerReportNarrowsToFoodsThatDeclareTheAllergen() {
         final Food cookie = food(10, "COOKIES", "PEANUTS");
@@ -423,7 +555,7 @@ public class TraceServiceImplTest {
         final Order other = order(2, user("bob", "PEANUTS"), NOON.plusMinutes(20), cookie);
         stubFood(cookie, mine, other);
 
-        final TraceResult result = service.reportCustomerReaction("alice", 1L, "peanut");
+        final TraceResult result = reportAndConfirmAll(service, "peanut");
 
         assertEquals(new LinkedHashSet<>(Arrays.asList(10L)), result.getIncident().getSuspectFoodIds());
         verify(orderRepository, never()).findOrdersContainingFood(salad);
@@ -441,7 +573,7 @@ public class TraceServiceImplTest {
         stubFood(soup, mine, soupOrder);
         stubFood(salad, mine, saladOrder);
 
-        final TraceResult result = service.reportCustomerReaction("alice", 1L, "peanut");
+        final TraceResult result = reportAndConfirmAll(service, "peanut");
 
         assertEquals(new LinkedHashSet<>(Arrays.asList(10L, 11L)), result.getIncident().getSuspectFoodIds());
         assertEquals(Arrays.asList("bob", "carol"), result.getNotifiedUsernames());
@@ -470,7 +602,7 @@ public class TraceServiceImplTest {
         final Order mine = reporterOrder(user("alice", "PEANUTS"), cookie);
         stubFood(cookie, mine);
 
-        final TraceResult result = service.reportCustomerReaction("alice", 1L, "peanut");
+        final TraceResult result = reportAndConfirmAll(service, "peanut");
 
         assertEquals(Arrays.asList(1L), result.getExposedOrderIds());
         assertTrue(result.getNotifications().isEmpty());
@@ -486,7 +618,7 @@ public class TraceServiceImplTest {
         final Order tooLate = order(5, user("erin", "PEANUTS"), NOON.plusHours(2).plusMinutes(1), cookie);
         stubFood(cookie, mine, earlyEdge, lateEdge, tooEarly, tooLate);
 
-        final TraceResult result = service.reportCustomerReaction("alice", 1L, "peanut");
+        final TraceResult result = reportAndConfirmAll(service, "peanut");
 
         assertEquals(Arrays.asList("bob", "carol"), result.getNotifiedUsernames());
     }
@@ -501,7 +633,7 @@ public class TraceServiceImplTest {
         final Order outside = order(3, user("carol", "PEANUTS"), NOON.plusMinutes(61), cookie);
         stubFood(cookie, mine, inside, outside);
 
-        final TraceResult result = oneHour.reportCustomerReaction("alice", 1L, "peanut");
+        final TraceResult result = reportAndConfirmAll(oneHour, "peanut");
 
         assertEquals(NOON.minusHours(1), result.getIncident().getWindowStart());
         assertEquals(NOON.plusHours(1), result.getIncident().getWindowEnd());
@@ -518,7 +650,7 @@ public class TraceServiceImplTest {
         final Order later = order(3, user("carol", "PEANUTS"), NOON.plusMinutes(1), cookie);
         stubFood(cookie, mine, same, later);
 
-        final TraceResult result = zero.reportCustomerReaction("alice", 1L, "peanut");
+        final TraceResult result = reportAndConfirmAll(zero, "peanut");
 
         assertEquals(Arrays.asList("bob"), result.getNotifiedUsernames());
     }

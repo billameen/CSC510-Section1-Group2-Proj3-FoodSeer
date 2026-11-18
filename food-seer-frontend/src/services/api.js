@@ -802,6 +802,32 @@ export const acknowledgeIncident = async (incidentId, remedy) => {
   return await response.json();
 };
 
+// Staff: confirm which dishes in a pending customer report were at fault.
+// Only those dishes are traced, and affected customers are warned.
+export const confirmIncident = async (incidentId, foodIds) => {
+  const response = await fetch(`${API_BASE_URL}/api/incidents/${incidentId}/confirm`, {
+    method: 'POST',
+    headers: createHeaders(true),
+    body: JSON.stringify({ foodIds }),
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Failed to confirm the report'));
+  }
+  return await response.json();
+};
+
+// Staff: close a pending customer report without warning anyone.
+export const dismissIncident = async (incidentId) => {
+  const response = await fetch(`${API_BASE_URL}/api/incidents/${incidentId}/dismiss`, {
+    method: 'POST',
+    headers: createHeaders(true),
+  });
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Failed to dismiss the report'));
+  }
+  return await response.json();
+};
+
 // Customer: your own safety notices, newest first.
 export const getMyNotifications = async () => {
   const response = await fetch(`${API_BASE_URL}/api/notifications/my`, {

@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 import FoodSeer.constant.IncidentSource;
+import FoodSeer.constant.IncidentStatus;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
 import jakarta.persistence.ElementCollection;
@@ -39,6 +40,15 @@ public class Incident {
     @Enumerated(EnumType.STRING)
     @Column(name = "report_source", nullable = false, length = 20)
     private IncidentSource source;
+
+    /**
+     * Review status. Nullable so the column can be added to an existing
+     * database; rows saved before it existed had already alerted customers,
+     * so a null is read as ACTIVE.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    private IncidentStatus status;
 
     /** The allergen, in normalized form such as "PEANUT". */
     @Column(nullable = false, length = 100)
@@ -89,6 +99,12 @@ public class Incident {
     @Column(length = 500)
     private String remedy;
 
+    /** Username of the staff member who confirmed or dismissed a customer report. */
+    private String reviewedBy;
+
+    /** When a customer report was confirmed or dismissed, or null if not yet. */
+    private LocalDateTime reviewedAt;
+
     /**
      * Constructor for Hibernate.
      */
@@ -110,6 +126,21 @@ public class Incident {
 
     public void setSource(final IncidentSource source) {
         this.source = source;
+    }
+
+    /**
+     * @return the review status; ACTIVE for rows saved before the status
+     *         column existed
+     */
+    public IncidentStatus getStatus() {
+        if (status == null) {
+            return IncidentStatus.ACTIVE;
+        }
+        return status;
+    }
+
+    public void setStatus(final IncidentStatus status) {
+        this.status = status;
     }
 
     public String getAllergen() {
@@ -206,5 +237,21 @@ public class Incident {
 
     public void setRemedy(final String remedy) {
         this.remedy = remedy;
+    }
+
+    public String getReviewedBy() {
+        return reviewedBy;
+    }
+
+    public void setReviewedBy(final String reviewedBy) {
+        this.reviewedBy = reviewedBy;
+    }
+
+    public LocalDateTime getReviewedAt() {
+        return reviewedAt;
+    }
+
+    public void setReviewedAt(final LocalDateTime reviewedAt) {
+        this.reviewedAt = reviewedAt;
     }
 }

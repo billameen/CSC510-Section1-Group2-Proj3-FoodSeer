@@ -161,8 +161,9 @@ const Orders = () => {
         ...reactionResults,
         [orderId]: {
           ok: true,
-          text: 'Thank you. The restaurant has been notified, and other customers who may have been exposed '
-            + 'will get a private notice. If you feel unwell, please seek medical care.'
+          text: 'Thank you. The restaurant has been notified. Staff will check which dish caused it, and then '
+            + 'other customers who may have been exposed will get a private notice. '
+            + 'If you feel unwell, please seek medical care.'
             + (wasAlreadyKnown ? '' : ` We've also added "${normalizedAllergen}" to your saved allergies.`),
         },
       });

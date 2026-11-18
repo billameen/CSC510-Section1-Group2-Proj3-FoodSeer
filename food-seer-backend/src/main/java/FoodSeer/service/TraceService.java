@@ -43,13 +43,18 @@ public interface TraceService {
      * so every food in the order is suspect. The window runs from the
      * configured number of hours before the order to the same number after it.
      *
+     * The incident is saved as PENDING_REVIEW and nobody is alerted. The
+     * suspect foods become the candidates staff choose from in
+     * {@link #confirmIncident(Long, String, List)}.
+     *
      * @param reporterUsername
      *            username of the customer; must own the order
      * @param orderId
      *            the order the reaction followed
      * @param allergen
      *            the allergen the customer reacted to
-     * @return the saved incident, the exposed orders and the notifications created
+     * @return the saved pending incident, with no exposed orders and no
+     *         notifications
      * @throws IllegalArgumentException
      *             if the allergen is blank, or the order has no time or no foods
      * @throws FoodSeer.exception.ResourceNotFoundException
@@ -58,6 +63,41 @@ public interface TraceService {
      *             if the order belongs to someone else
      */
     TraceResult reportCustomerReaction(String reporterUsername, Long orderId, String allergen);
+
+    /**
+     * Staff confirm which dishes in a pending customer report were at fault.
+     * The incident becomes ACTIVE and is traced with only those dishes, over
+     * the window saved with the report, and affected customers are alerted.
+     *
+     * @param incidentId
+     *            a PENDING_REVIEW customer report
+     * @param staffUsername
+     *            the staff member confirming it
+     * @param confirmedFoodIds
+     *            one or more of the report's candidate dishes
+     * @return the incident, the exposed orders and the notifications created
+     * @throws IllegalArgumentException
+     *             if the incident is not pending, no dish is given, or a dish
+     *             was not one of the candidates
+     * @throws FoodSeer.exception.ResourceNotFoundException
+     *             if the incident does not exist
+     */
+    TraceResult confirmIncident(Long incidentId, String staffUsername, List<Long> confirmedFoodIds);
+
+    /**
+     * Staff close a pending customer report without alerting anyone.
+     *
+     * @param incidentId
+     *            a PENDING_REVIEW customer report
+     * @param staffUsername
+     *            the staff member dismissing it
+     * @return the updated incident summary
+     * @throws IllegalArgumentException
+     *             if the incident is not pending
+     * @throws FoodSeer.exception.ResourceNotFoundException
+     *             if the incident does not exist
+     */
+    IncidentDto dismissIncident(Long incidentId, String staffUsername);
 
     /**
      * Lists every incident for restaurant staff, newest first.

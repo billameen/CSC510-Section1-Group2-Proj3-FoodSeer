@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import FoodSeer.dto.AcknowledgeIncidentDto;
+import FoodSeer.dto.ConfirmIncidentDto;
 import FoodSeer.dto.CustomerReactionRequestDto;
 import FoodSeer.dto.IncidentDto;
 import FoodSeer.dto.IncidentReportResultDto;
@@ -30,8 +31,12 @@ import FoodSeer.service.TraceService;
  *
  * <ul>
  * <li>POST /api/incidents: staff report a contaminated dish.</li>
- * <li>POST /api/incidents/reaction: a customer reports a reaction on their own order.</li>
+ * <li>POST /api/incidents/reaction: a customer reports a reaction on their own
+ * order. It waits for staff review and alerts nobody yet.</li>
  * <li>GET /api/incidents: staff list every incident, with counts only.</li>
+ * <li>POST /api/incidents/{id}/confirm: staff confirm the dish in a pending
+ * customer report, which alerts affected customers.</li>
+ * <li>POST /api/incidents/{id}/dismiss: staff close a pending customer report.</li>
  * <li>POST /api/incidents/{id}/acknowledge: staff acknowledge and attach a remedy.</li>
  * </ul>
  */
@@ -131,6 +136,48 @@ public class IncidentController {
             remedy = request.remedy();
         }
         return traceService.acknowledgeIncident(id, authentication.getName(), remedy);
+    }
+
+    /**
+     * Staff confirm which dishes in a pending customer report were at fault,
+     * which traces them and alerts affected customers.
+     *
+     * @param id
+     *            the pending incident
+     * @param request
+     *            the confirmed dish ids, chosen from the report's candidates
+     * @param authentication
+     *            the signed-in staff member
+     * @return the incident id with exposed and notified counts
+     */
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PostMapping("/{id}/confirm")
+    public IncidentReportResultDto confirmIncident(@PathVariable("id") final Long id,
+            @RequestBody final ConfirmIncidentDto request, final Authentication authentication) {
+        final List<Long> foodIds;
+        if (request == null) {
+            foodIds = null;
+        } else {
+            foodIds = request.foodIds();
+        }
+        final TraceResult result = traceService.confirmIncident(id, authentication.getName(), foodIds);
+        return new IncidentReportResultDto(result.getIncident().getId(), result.getExposedOrderIds().size(),
+                result.getNotifications().size());
+    }
+
+    /**
+     * Staff close a pending customer report without alerting anyone.
+     *
+     * @param id
+     *            the pending incident
+     * @param authentication
+     *            the signed-in staff member
+     * @return the updated incident summary
+     */
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    @PostMapping("/{id}/dismiss")
+    public IncidentDto dismissIncident(@PathVariable("id") final Long id, final Authentication authentication) {
+        return traceService.dismissIncident(id, authentication.getName());
     }
 
     /**

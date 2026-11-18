@@ -45,10 +45,21 @@ import FoodSeer.service.impl.TraceServiceImpl;
  * <p>
  * <b>Claim.</b> When an allergy incident is reported, FoodSeer warns the
  * customers who were really exposed (alert recall of at least 0.95) without
- * flooding everyone else (alert precision of at least 0.70). Baselines: the
- * exact string matching FoodSeer used before (found in Project 1a), alerting
- * every allergic customer who ordered that day, and alerting everyone who
- * ordered the dish without checking allergies.
+ * sending more wrong alerts than it does today (alert precision of at least
+ * 0.28) and while beating every baseline. Baselines: the exact string
+ * matching FoodSeer used before (found in Project 1a), alerting every
+ * allergic customer who ordered that day, and alerting everyone who ordered
+ * the dish without checking allergies.
+ * </p>
+ *
+ * <p>
+ * <b>Revised claim.</b> The original claim also required alert precision of
+ * at least 0.70. The Milestone 1 spiral review (option d) replaced it with
+ * the 0.28 no-regression floor after a ceiling experiment showed that, with
+ * the restaurant reports this simulation produces, no customer window from
+ * 30 to 120 minutes reaches 0.70, even if staff always confirm the true dish.
+ * The report still prints the original target and whether it is met. See
+ * docs/allergy-trace-back.md and docs/m0-runs/09-ceiling-experiment.md.
  * </p>
  *
  * <p>
@@ -68,6 +79,9 @@ import FoodSeer.service.impl.TraceServiceImpl;
  * side and which names one innocent extra dish 25% of the time. The other
  * half are reported by an allergic customer who ate the dish, which the
  * service traces with its own window of 2 hours either side of that order.
+ * A customer report alerts nobody until staff confirm which dish was at
+ * fault. The simulation cannot model staff judgment, so its staff confirm
+ * every candidate dish: the review gets no credit for picking the right one.
  * Ground truth is who really ate the dish in the true window and really has
  * the allergy. The service never sees the truth.
  * </p>
@@ -90,8 +104,14 @@ public class M0TraceEval {
     /** The claim: alert recall must reach this. */
     static final double RECALL_THRESHOLD = 0.95;
 
-    /** The claim: alert precision must reach this. */
-    static final double PRECISION_THRESHOLD = 0.70;
+    /**
+     * The claim: alert precision must not fall below this. A no-regression
+     * floor: the 0.285 measured when the claim was revised, rounded down.
+     */
+    static final double PRECISION_FLOOR = 0.28;
+
+    /** The original precision target, revised by spiral review. Reported, not enforced. */
+    static final double ORIGINAL_PRECISION_TARGET = 0.70;
 
     static final long[] SEEDS = {1L, 2L, 3L, 4L, 5L};
     static final int INCIDENTS_PER_SEED = 100;
@@ -268,9 +288,9 @@ public class M0TraceEval {
         assertTrue(ours.recall() >= RECALL_THRESHOLD, String.format(Locale.ROOT,
                 "M0 claim failed: alert recall %.3f is below %.2f. See %s", ours.recall(), RECALL_THRESHOLD,
                 reportPath));
-        assertTrue(ours.precision() >= PRECISION_THRESHOLD, String.format(Locale.ROOT,
-                "M0 claim failed: alert precision %.3f is below %.2f. See %s", ours.precision(),
-                PRECISION_THRESHOLD, reportPath));
+        assertTrue(ours.precision() >= PRECISION_FLOOR, String.format(Locale.ROOT,
+                "M0 claim failed: alert precision %.3f is below the no-regression floor %.2f. See %s",
+                ours.precision(), PRECISION_FLOOR, reportPath));
         assertTrue(ours.recall() > result.overall.get(Approach.EXACT_MATCH).recall(),
                 "Trace-back recall should beat exact string matching.");
         assertTrue(ours.precision() > result.overall.get(Approach.NO_TRACE).precision(),
@@ -429,7 +449,11 @@ public class M0TraceEval {
 
         final TraceResult traced;
         if (customerReport) {
-            traced = service.reportCustomerReaction(reporter, reporterOrder.getId(), typedAllergen);
+            final TraceResult pending = service.reportCustomerReaction(reporter, reporterOrder.getId(),
+                    typedAllergen);
+            // Staff review: confirm every candidate dish, never a better guess than the service had.
+            traced = service.confirmIncident(pending.getIncident().getId(), "staff",
+                    new ArrayList<>(pending.getIncident().getSuspectFoodIds()));
             result.customerReports = result.customerReports + 1;
         } else {
             final int padStart = -20 + rng.nextInt(61);
@@ -606,6 +630,7 @@ public class M0TraceEval {
         final IncidentRepository incidentRepository = mock(IncidentRepository.class);
         final NotificationRepository notificationRepository = mock(NotificationRepository.class);
         final long[] nextIncidentId = {1L};
+        final Map<Long, Incident> savedIncidents = new HashMap<>();
 
         when(orderRepository.findOrdersContainingFood(any(Food.class))).thenAnswer(invocation -> {
             final Food food = invocation.getArgument(0);
@@ -625,13 +650,24 @@ public class M0TraceEval {
         });
         when(incidentRepository.save(any(Incident.class))).thenAnswer(invocation -> {
             final Incident incident = invocation.getArgument(0);
-            incident.setId(nextIncidentId[0]);
-            nextIncidentId[0] = nextIncidentId[0] + 1;
+            if (incident.getId() == null) {
+                incident.setId(nextIncidentId[0]);
+                nextIncidentId[0] = nextIncidentId[0] + 1;
+            }
+            savedIncidents.put(incident.getId(), incident);
             return incident;
+        });
+        // Staff review finds the pending incident again by id.
+        when(incidentRepository.findById(any())).thenAnswer(invocation -> {
+            final Long id = invocation.getArgument(0);
+            return Optional.ofNullable(savedIncidents.get(id));
         });
         when(notificationRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        return new TraceServiceImpl(orderRepository, foodRepository, incidentRepository, notificationRepository, 2);
+        // Use production's default window, not a copy of it, so changing the
+        // default changes what M0 measures.
+        return new TraceServiceImpl(orderRepository, foodRepository, incidentRepository, notificationRepository,
+                TraceServiceImpl.DEFAULT_WINDOW_HOURS);
     }
 
     // Report
@@ -639,14 +675,20 @@ public class M0TraceEval {
     static String buildReport(final EvalResult result) {
         final Tally ours = result.overall.get(Approach.TRACE_BACK);
         final boolean recallPass = ours.recall() >= RECALL_THRESHOLD;
-        final boolean precisionPass = ours.precision() >= PRECISION_THRESHOLD;
+        final boolean precisionPass = ours.precision() >= PRECISION_FLOOR;
+        final boolean originalTargetMet = ours.precision() >= ORIGINAL_PRECISION_TARGET;
         final StringBuilder out = new StringBuilder();
         out.append("# M0 eval: allergy trace-back\n\n");
         out.append(String.format(Locale.ROOT,
-                "Claim: alert recall >= %.2f and alert precision >= %.2f on simulated incidents.%n%n",
-                RECALL_THRESHOLD, PRECISION_THRESHOLD));
+                "Claim: alert recall >= %.2f and alert precision >= %.2f (no-regression floor) on simulated"
+                        + " incidents, and better than every baseline.%n%n",
+                RECALL_THRESHOLD, PRECISION_FLOOR));
         out.append(String.format(Locale.ROOT, "Result: recall %.3f (%s), precision %.3f (%s).%n%n", ours.recall(),
                 passFail(recallPass), ours.precision(), passFail(precisionPass)));
+        out.append(String.format(Locale.ROOT,
+                "Original precision target %.2f, revised by spiral review: %s (precision %.3f). See"
+                        + " docs/allergy-trace-back.md.%n%n",
+                ORIGINAL_PRECISION_TARGET, originalTargetMet ? "met" : "not met", ours.precision()));
         out.append(String.format(Locale.ROOT,
                 "Incidents: %d (%d restaurant reports, %d customer reports) over seeds %s; %d customers and %d"
                         + " orders per simulated day; %.0f%% of customers typed free text.%n%n",
