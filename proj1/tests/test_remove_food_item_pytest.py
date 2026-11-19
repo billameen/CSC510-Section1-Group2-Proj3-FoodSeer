@@ -25,6 +25,7 @@ from api_helpers import (
     api_request,
     admin_token,
     register_and_login,
+    deliver_order,
     require_backend,
     unique_name,
 )
@@ -105,8 +106,8 @@ def test_deletion_is_blocked_while_an_unfulfilled_order_contains_the_item(admin)
 def test_deleting_a_food_in_a_fulfilled_order_fails_before_reaching_extension_5a(admin):
     """This documents the live-environment reality described in the module
     docstring: even the legitimate admin path to delete a food that is only in
-    a fulfilled order fails with an unhandled 500 from the Inventory FK
-    constraint, before the order-mutation behavior extension 5a describes can
+    a fulfilled order fails on the Inventory FK constraint (a 409 since
+    Milestone 2; an unhandled 500 before), before the order-mutation behavior extension 5a describes can
     ever be observed over HTTP. Our JUnit suite's
     testDeleteFood_removesItemFromFulfilledOrder_priceStaysStale demonstrates
     the actual extension 5a defect (order silently mutated, cost never
@@ -120,14 +121,17 @@ def test_deleting_a_food_in_a_fulfilled_order_fails_before_reaching_extension_5a
         "DELETE", f"/api/foods/{food['id']}", token=admin
     )
 
-    assert delete_status == 500, (
-        f"expected the known Inventory FK-constraint failure; got {delete_status} {delete_body}"
+    # Milestone 2: the same FK-constraint failure now comes back as a clean
+    # 409 with a generic message, instead of a 500 that leaked the SQL error.
+    assert delete_status == 409, (
+        f"expected the known Inventory FK-constraint conflict; got {delete_status} {delete_body}"
     )
+    assert "constraint" not in str(delete_body).lower()
 
 
 def test_deleting_a_rated_food_also_fails_before_reaching_extension_5b(admin):
     """This documents the same live-environment blocker for extension 5b: even
-    a rated food's deletion fails with the Inventory FK-constraint 500 before
+    a rated food's deletion fails on the Inventory FK constraint (409) before
     any question of ratedFoodIds cleanup can be observed over HTTP. Our JUnit
     suite's testDeleteFood_ratingRecordStillReferencesDeletedItem demonstrates
     the actual dangling-reference defect in an isolated database."""
@@ -135,6 +139,8 @@ def test_deleting_a_rated_food_also_fails_before_reaching_extension_5b(admin):
     _, customer = register_and_login("customer", "dangling_rating_customer")
     order = place_order(customer, food, "Order To Be Rated Then Orphaned")
     fulfill_order(admin, order)
+    # Rating needs a delivered order (Milestone 2), not just a fulfilled one.
+    deliver_order(order["id"])
 
     rate_status, rate_body = api_request(
         "POST", f"/api/foods/orders/{order['id']}/{food['id']}/rate?rating=4.5", token=customer
@@ -145,6 +151,9 @@ def test_deleting_a_rated_food_also_fails_before_reaching_extension_5b(admin):
         "DELETE", f"/api/foods/{food['id']}", token=admin
     )
 
-    assert delete_status == 500, (
-        f"expected the known Inventory FK-constraint failure; got {delete_status} {delete_body}"
+    # Milestone 2: the same FK-constraint failure now comes back as a clean
+    # 409 with a generic message, instead of a 500 that leaked the SQL error.
+    assert delete_status == 409, (
+        f"expected the known Inventory FK-constraint conflict; got {delete_status} {delete_body}"
     )
+    assert "constraint" not in str(delete_body).lower()

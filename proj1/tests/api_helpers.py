@@ -119,6 +119,27 @@ def register_and_login(role, prefix=None):
     return account, token
 
 
+def deliver_order(order_id):
+    """Take an order through the real driver flow: claim, pick up, deliver.
+
+    Rating needs a delivered order (Milestone 2); staff fulfilling an order
+    only means it is ready. Test customers have no saved allergies, so no
+    allergy hand-off acknowledgement is needed before pickup.
+    """
+    driver, token = register_and_login("driver", "delivery_driver")
+    status, body = api_request("POST", f"/api/orders/{order_id}/claim", token=token)
+    assert status == 200, body
+    for step in ("Picked Up", "Delivered"):
+        status, body = api_request(
+            "POST",
+            f"/api/orders/{order_id}",
+            {"status": step, "username": driver["username"]},
+            token=token,
+        )
+        assert status == 200, body
+    return body
+
+
 def admin_token():
     token = login(ADMIN_USERNAME, ADMIN_PASSWORD)
     if not token:
