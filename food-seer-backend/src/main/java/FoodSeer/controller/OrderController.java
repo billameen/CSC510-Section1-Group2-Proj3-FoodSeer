@@ -31,11 +31,12 @@ public class OrderController {
     private OrderService orderService;
 
     /**
-     * Retrieves all orders in the system.
+     * Retrieves all orders in the system. Staff and admin only: orders carry
+     * every customer's allergy restrictions.
      *
      * @return JSON list of all orders
      */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @GetMapping
     public List<OrderDto> getOrders() {
         return orderService.getAllOrders();
@@ -46,7 +47,7 @@ public class OrderController {
      *
      * @return JSON list of fulfilled orders
      */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @GetMapping("/fulfilledOrders")
     public List<OrderDto> getFulfilledOrders() {
         return orderService.getAllFulfilledOrders();
@@ -57,19 +58,19 @@ public class OrderController {
      *
      * @return JSON list of unfulfilled orders
      */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER', 'DRIVER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @GetMapping("/unfulfilledOrders")
     public List<OrderDto> getUnfulfilledOrders() {
         return orderService.getAllUnfulfilledOrders();
     }
 
     /**
-     * Creates a new order.
+     * Creates a new order for the signed-in customer.
      *
      * @param orderDto the order to create
      * @return ResponseEntity containing the created order
      */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER')")
+    @PreAuthorize("hasRole('CUSTOMER')")
     @PostMapping
     public ResponseEntity<OrderDto> createOrder(@RequestBody final OrderDto orderDto) {
         logger.info("Creating order: {}", orderDto.toString());
@@ -83,7 +84,7 @@ public class OrderController {
      * @param orderDto the order to fulfill
      * @return ResponseEntity with status depending on fulfillment result
      */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     @PostMapping("/fulfillOrder")
     public ResponseEntity<OrderDto> fulfillOrder(@RequestBody final OrderDto orderDto) {
         try {
@@ -107,14 +108,17 @@ public class OrderController {
     }
 
     /**
-     * Retrieves a specific order by ID.
+     * Retrieves a specific order by ID: staff and admin, the customer who
+     * placed it, or the driver assigned to it.
      *
      * @param id the ID of the order
      * @return ResponseEntity containing the order or 404 if not found
      */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')"
+            + " or (hasRole('CUSTOMER') and @orderAccess.isOwner(authentication, #id))"
+            + " or (hasRole('DRIVER') and @orderAccess.isAssignedDriver(authentication, #id))")
     @GetMapping("/{id}")
-    public ResponseEntity<OrderDto> getOrder(@PathVariable("id") final Long id) {
+    public ResponseEntity<OrderDto> getOrder(@P("id") @PathVariable("id") final Long id) {
         try {
             final OrderDto orderDto = orderService.getOrderById(id);
             return ResponseEntity.ok(orderDto);
@@ -129,7 +133,7 @@ public class OrderController {
      * @return JSON list of current user's orders
      */
     @PreAuthorize("hasRole('CUSTOMER')")
-    @GetMapping("/my-orders")
+    @GetMapping("/my")
     public List<OrderDto> getMyOrders() {
         return orderService.getCurrentUserOrders();
     }
@@ -140,7 +144,7 @@ public class OrderController {
      * @return JSON list of current user's fulfilled orders
      */
     @PreAuthorize("hasRole('CUSTOMER')")
-    @GetMapping("/my-orders/fulfilled")
+    @GetMapping("/my/fulfilled")
     public List<OrderDto> getMyFulfilledOrders() {
         return orderService.getCurrentUserFulfilledOrders();
     }
@@ -151,12 +155,20 @@ public class OrderController {
      * @return JSON list of current user's unfulfilled orders
      */
     @PreAuthorize("hasRole('CUSTOMER')")
-    @GetMapping("/my-orders/unfulfilled")
+    @GetMapping("/my/unfulfilled")
     public List<OrderDto> getMyUnfulfilledOrders() {
         return orderService.getCurrentUserUnfulfilledOrders();
     }
 
-    @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
+    /**
+     * Delivery status update (Picked Up, Delivered). Drivers only; the service
+     * checks that the caller is the driver assigned to this order (403 if not).
+     *
+     * @param id the order
+     * @param updateOrderDto the new status
+     * @return the updated order
+     */
+    @PreAuthorize("hasRole('DRIVER')")
     @PostMapping("/{id}")
     public ResponseEntity<?> updateOrderStatus(@PathVariable("id") final Long id, @RequestBody UpdateOrderDto updateOrderDto){
         logger.info("Updating order status for order ID: {}", id);
