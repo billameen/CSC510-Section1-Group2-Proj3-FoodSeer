@@ -1,6 +1,7 @@
 package FoodSeer.controller;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,10 +23,12 @@ import FoodSeer.dto.CalorieBudgetDto;
 import FoodSeer.dto.DailyCalorieHistoryDto;
 // request shape for the new logMeal endpoint below
 import FoodSeer.dto.LogMealRequestDto;
+import FoodSeer.dto.RegisterRequestDto;
 import FoodSeer.dto.UpdateRoleDto;
 import FoodSeer.dto.UserDto;
 import FoodSeer.dto.UserPreferencesDto;
 // supplies budget computation and meal logging for the two new endpoints below
+import FoodSeer.service.AuthService;
 import FoodSeer.service.CalorieBudgetService;
 import FoodSeer.service.UserService;
 import org.springframework.security.core.Authentication;
@@ -38,6 +41,10 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    // creates staff and admin accounts for POST /api/users
+    @Autowired
+    private AuthService authService;
+
     // powers the two new endpoints below: getCalorieBudget and logMeal
     @Autowired
     private CalorieBudgetService calorieBudgetService;
@@ -47,6 +54,14 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public List<UserDto> listUsers() {
         return userService.listUsers().stream().map(UserDto::fromEntity).collect(Collectors.toList());
+    }
+
+    // Admin-only: create an account of any role. This is the only way to make
+    // staff or admin accounts; public sign-up is limited to customers and drivers.
+    @PostMapping("")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, String>> createUser(@RequestBody final RegisterRequestDto req) {
+        return authService.createAccount(req);
     }
 
     // Admin-only: get user by id
