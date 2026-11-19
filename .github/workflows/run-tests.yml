@@ -29,6 +29,10 @@ jobs:
       SPRING_TEST_DATABASE_REPLACE: any
       SPRING_SQL_INIT_MODE: never
       APP_JWT_SECRET: "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
+      # Password for the seeded "admin" account. DataInitializer creates the admin
+      # only when this is set, and the Selenium login tests sign in with it.
+      # Test-only value; real deployments set their own.
+      FOODSEER_ADMIN_PASSWORD: "ci-admin-password"
 
     steps:
       - name: Check out repository
