@@ -400,6 +400,21 @@ export const getAllUsers = async () => {
   }
 };
 
+// Admin: create an account of any role. This is the only way to create
+// staff and admin accounts; public sign-up is customers and drivers only.
+export const createUser = async (username, email, password, role) => {
+  try {
+    return await request('/api/users', {
+      method: 'POST',
+      body: { username, email, password, role },
+      fallbackError: 'Failed to create account',
+    });
+  } catch (error) {
+    console.error('Create user error:', error);
+    throw error;
+  }
+};
+
 export const getUserById = async (id) => {
   try {
     return await request(`/api/users/${id}`, { fallbackError: 'Failed to fetch user' });

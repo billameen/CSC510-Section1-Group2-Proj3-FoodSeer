@@ -2845,3 +2845,25 @@ code {
 .trace-report-button:hover {
   background: #fff7ed;
 }
+
+/* User Management: admin creates staff, admin, driver or customer accounts */
+.create-account-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.create-account-form .form-input,
+.create-account-form .role-select {
+  flex: 1 1 160px;
+  margin: 0;
+}
+
+.create-account-form .submit-button {
+  flex: 0 0 auto;
+}
+
+.users-table-container + .users-table-container {
+  margin-top: 20px;
+}
