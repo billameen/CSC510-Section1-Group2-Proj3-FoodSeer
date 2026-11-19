@@ -97,10 +97,18 @@ def login(username, password):
 
 
 def register_and_login(role, prefix=None):
-    """Create a throwaway account of the given role, return (account, token)."""
+    """Create a throwaway account of the given role, return (account, token).
+
+    Customers and drivers use the public sign-up. Since Milestone 2 the
+    public form rejects staff and admin, so those are created by the seeded
+    admin through POST /api/users, the same way the app does it.
+    """
     account = new_account(role, prefix)
 
-    status, body = api_request("POST", "/auth/register", account)
+    if role.lower() in ("staff", "admin"):
+        status, body = api_request("POST", "/api/users", account, token=admin_token())
+    else:
+        status, body = api_request("POST", "/auth/register", account)
     if status != 200:
         raise AssertionError(f"could not register a {role}: {status} {body}")
 

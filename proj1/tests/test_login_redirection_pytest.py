@@ -66,9 +66,27 @@ def base26_letters(number):
     return "".join(reversed(letters)) or "a"
 
 
+def admin_token():
+    """The seeded admin, who creates staff accounts (public sign-up can't)."""
+    status, body = api_request(
+        "POST",
+        "/auth/login",
+        {
+            "username": os.environ.get("FOODSEER_ADMIN", "admin"),
+            "password": os.environ.get("FOODSEER_ADMIN_PASSWORD", "admin123"),
+        },
+    )
+    assert status == 200, f"could not log in as the seeded admin: {status} {body}"
+    return body["accessToken"]
+
+
 def register_and_login(prefix, role):
     user = unique_user(prefix=prefix, role=role)
-    reg_status, reg_body = api_request("POST", "/auth/register", user)
+    if role in ("staff", "admin"):
+        # Milestone 2: staff and admin accounts are created by an admin.
+        reg_status, reg_body = api_request("POST", "/api/users", user, token=admin_token())
+    else:
+        reg_status, reg_body = api_request("POST", "/auth/register", user)
     assert reg_status == 200, reg_body
 
     login_status, login_body = api_request(
