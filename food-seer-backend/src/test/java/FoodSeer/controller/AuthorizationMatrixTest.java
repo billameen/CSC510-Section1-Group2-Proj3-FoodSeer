@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -28,11 +29,15 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.util.AntPathMatcher;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import FoodSeer.config.SpringSecurityConfig;
 import FoodSeer.dto.DriverStatsDto;
@@ -63,6 +68,9 @@ import FoodSeer.service.impl.JwtAuthenticationEntryPoint;
  * security setup: URL rules, the JWT filter, password login and method
  * security. Services and repositories are mocked, so an allowed call returns
  * 2xx and the only thing under test is who gets in.
+ *
+ * matrixCoversEveryEndpointAndEachHasARoleRule fails if a controller gains an
+ * endpoint with no row here, or without its own @PreAuthorize.
  *
  * Each row is one endpoint. The expected column lists the result for
  * anonymous, CUSTOMER, DRIVER, STAFF and ADMIN in that order: OK means 2xx,
@@ -310,6 +318,42 @@ class AuthorizationMatrixTest {
         final int status = perform(caller, method, path, body);
         assertStatus(method + " " + path + " as " + caller, expected == 200 ? "OK" : String.valueOf(expected),
                 status);
+    }
+
+    @Autowired
+    private RequestMappingHandlerMapping handlerMapping;
+
+    /**
+     * Every controller endpoint has at least one row in the matrix, and every
+     * endpoint outside /auth has its own @PreAuthorize. Adding an endpoint
+     * without either fails here.
+     */
+    @Test
+    void matrixCoversEveryEndpointAndEachHasARoleRule() {
+        final AntPathMatcher matcher = new AntPathMatcher();
+        final List<String> problems = new ArrayList<>();
+        handlerMapping.getHandlerMethods().forEach((info, handler) -> {
+            if (!handler.getBeanType().getPackageName().equals("FoodSeer.controller")) {
+                return;
+            }
+            for (final String pattern : info.getPatternValues()) {
+                for (final RequestMethod method : info.getMethodsCondition().getMethods()) {
+                    final boolean covered = matrix().stream()
+                            .anyMatch(r -> r.method().equals(method.name())
+                                    && matcher.match(pattern, r.path().split("\\?")[0]));
+                    if (!covered) {
+                        problems.add("no matrix row for " + method + " " + pattern);
+                    }
+                    if (!pattern.startsWith("/auth/")
+                            && handler.getMethodAnnotation(PreAuthorize.class) == null) {
+                        problems.add("no @PreAuthorize on " + method + " " + pattern);
+                    }
+                }
+            }
+        });
+        if (!problems.isEmpty()) {
+            throw new AssertionError(String.join("\n", problems));
+        }
     }
 
     private int perform(final String caller, final String method, final String path, final String body)
