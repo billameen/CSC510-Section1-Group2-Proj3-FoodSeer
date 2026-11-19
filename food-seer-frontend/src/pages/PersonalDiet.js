@@ -8,7 +8,6 @@ import {
   updateUserPreferences,
   logMeal,
   getAllergens,
-  addAllergen,
   createOrder
 } from '../services/api';
 
@@ -127,18 +126,9 @@ const PersonalDiet = () => {
     if (!allergyInput.includes(value)) {
       setAllergyInput((prev) => [...prev, value]);
     }
-    try {
-      // Persists this to the shared, site-wide list - from now on it shows
-      // up as a regular checkbox here (for every customer) and in the
-      // onboarding quiz and staff's Add Food form too, not just a one-off
-      // entry for this customer.
-      const updatedList = await addAllergen(value);
-      setAllergenOptions(updatedList);
-    } catch (error) {
-      console.error('Error adding allergen to the shared list:', error);
-      // Keep the customer's own selection even if the shared-list save failed -
-      // handleSaveAllergies below will still persist it on their own profile.
-    }
+    // A custom allergy is kept on this customer's own profile (saved by
+    // handleSaveAllergies below). The shared allergen list that staff tag
+    // dishes with is staff/admin-only.
   };
 
   const handleRemoveAllergy = (allergen) => {
