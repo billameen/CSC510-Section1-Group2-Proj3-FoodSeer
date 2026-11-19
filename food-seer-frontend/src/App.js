@@ -47,6 +47,8 @@ function App() {
         <Routes>
           {/* Public routes */}
           <Route path="/" element={<Login />} />
+          {/* request() in services/api.js sends an expired session here */}
+          <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           
           {/* Protected routes with navigation */}

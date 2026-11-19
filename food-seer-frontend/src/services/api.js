@@ -1,47 +1,131 @@
 const API_BASE_URL = 'http://localhost:8080';
 
+const TOKEN_KEY = 'token';
+const USERNAME_KEY = 'username';
+
 // Helper function to get token from localStorage
 const getAuthToken = () => {
-  return localStorage.getItem('token');
+  return localStorage.getItem(TOKEN_KEY);
 };
 
-// Helper function to create headers
-const createHeaders = (includeAuth = true) => {
-  const headers = {
-    'Content-Type': 'application/json',
-  };
-  
-  if (includeAuth) {
-    const token = getAuthToken();
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+const clearSession = () => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USERNAME_KEY);
+};
+
+/**
+ * Pulls a readable message out of a failed response. The backend answers with
+ * {"message": ...} (GlobalExceptionHandler), {"error": ...} (sign-up) or plain
+ * text (a few older endpoints).
+ */
+const readErrorMessage = async (response, fallback) => {
+  let text = '';
+  try {
+    text = await response.text();
+  } catch (readError) {
+    return fallback;
   }
-  
-  return headers;
+  if (!text) {
+    return fallback;
+  }
+  try {
+    const data = JSON.parse(text);
+    if (data && typeof data === 'object') {
+      return data.message || data.error || fallback;
+    }
+    return typeof data === 'string' ? data : fallback;
+  } catch (notJson) {
+    // Plain-text body, e.g. "Food is part of an unfulfilled order".
+    return text.length < 300 ? text : fallback;
+  }
+};
+
+/**
+ * The one place the frontend talks to the backend.
+ *
+ * - attaches the saved token (unless auth is false)
+ * - on 401 with a token, the session is over: clears the token and goes to
+ *   /login, so every page handles an expired login the same way
+ * - on any other error, throws an Error with the backend's message (or the
+ *   fallback) and the HTTP status on error.status
+ * - returns parsed JSON, plain text, or null for an empty body
+ *
+ * @param {string} path e.g. '/api/orders/my'
+ * @param {object} options { method, body, auth, fallbackError }
+ */
+export const request = async (path, { method = 'GET', body, auth = true, fallbackError } = {}) => {
+  const headers = {};
+  if (body !== undefined) {
+    headers['Content-Type'] = 'application/json';
+  }
+  const token = auth ? getAuthToken() : null;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  if (response.status === 401 && token) {
+    clearSession();
+    if (window.location.pathname !== '/login' && window.location.pathname !== '/') {
+      window.location.assign('/login');
+    }
+    const expired = new Error('Your session has expired. Please log in again.');
+    expired.status = 401;
+    throw expired;
+  }
+
+  if (!response.ok) {
+    const message = await readErrorMessage(response, fallbackError || `Request failed (${response.status})`);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return null;
+  }
+  const contentType = response.headers.get('Content-Type') || '';
+  if (contentType.includes('application/json')) {
+    return JSON.parse(text);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (notJson) {
+    return text;
+  }
 };
 
 // Auth API calls
 export const login = async (username, password) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    const data = await request('/auth/login', {
       method: 'POST',
-      headers: createHeaders(false),
-      body: JSON.stringify({ username, password }),
+      body: { username, password },
+      auth: false,
+      fallbackError: 'Login failed',
     });
-    
-    if (!response.ok) {
-      throw new Error('Login failed');
-    }
-    
-    const data = await response.json();
-    
+
     // Store token in localStorage
-    if (data.accessToken) {
-      localStorage.setItem('token', data.accessToken);
-      localStorage.setItem('username', username);
+    if (data && data.accessToken) {
+      localStorage.setItem(TOKEN_KEY, data.accessToken);
+      localStorage.setItem(USERNAME_KEY, username);
+      // The user may have typed their email; keep the real username.
+      try {
+        const me = await getCurrentUser();
+        if (me && me.username) {
+          localStorage.setItem(USERNAME_KEY, me.username);
+        }
+      } catch (lookupError) {
+        // Keep what they typed; the token is still valid.
+      }
     }
-    
+
     return data;
   } catch (error) {
     console.error('Login error:', error);
@@ -51,40 +135,30 @@ export const login = async (username, password) => {
 
 export const register = async (username, email, password, role) => {
   try {
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
-        method: 'POST',
-        headers: createHeaders(false),
-        body: JSON.stringify({ username, email, password, role }),
-      });
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error);
-      }
-      return await response.json();
-   } catch (error) {
-      console.error('Registration error:', error);
-      throw error;
-   }
+    return await request('/auth/register', {
+      method: 'POST',
+      body: { username, email, password, role },
+      auth: false,
+      fallbackError: 'Registration failed',
+    });
+  } catch (error) {
+    console.error('Registration error:', error);
+    throw error;
+  }
 };
 
 export const logout = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('username');
+  clearSession();
+};
+
+export const isAuthenticated = () => {
+  return !!getAuthToken();
 };
 
 // User API calls
 export const getCurrentUser = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/me`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch user');
-    }
-    
-    return await response.json();
+    return await request('/api/users/me', { fallbackError: 'Failed to fetch user' });
   } catch (error) {
     console.error('Get current user error:', error);
     throw error;
@@ -93,17 +167,11 @@ export const getCurrentUser = async () => {
 
 export const updateUserPreferences = async (costPreference, dietaryRestrictions, dailyCalorieGoal = null) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/me/preferences`, {
+    return await request('/api/users/me/preferences', {
       method: 'PUT',
-      headers: createHeaders(true),
-      body: JSON.stringify({ costPreference, dietaryRestrictions, dailyCalorieGoal }),
+      body: { costPreference, dietaryRestrictions, dailyCalorieGoal },
+      fallbackError: 'Failed to update preferences',
     });
-
-    if (!response.ok) {
-      throw new Error('Failed to update preferences');
-    }
-
-    return await response.json();
   } catch (error) {
     console.error('Update preferences error:', error);
     throw error;
@@ -112,16 +180,7 @@ export const updateUserPreferences = async (costPreference, dietaryRestrictions,
 
 export const getCalorieBudget = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/me/calorieBudget`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch calorie budget');
-    }
-
-    return await response.json();
+    return await request('/api/users/me/calorieBudget', { fallbackError: 'Failed to fetch calorie budget' });
   } catch (error) {
     console.error('Get calorie budget error:', error);
     throw error;
@@ -130,64 +189,32 @@ export const getCalorieBudget = async () => {
 
 // fetches the signed-in user's per-day calorie consumption history, most recent day first
 export const getCalorieHistory = async () => {
-  // network/parsing errors are caught below and re-thrown after logging
   try {
-    // GET the history endpoint, attaching the auth token via createHeaders(true)
-    const response = await fetch(`${API_BASE_URL}/api/users/me/calorieHistory`, {
-      // this is a read-only lookup
-      method: 'GET',
-      // true = include the Authorization header, since this endpoint requires login
-      headers: createHeaders(true),
-    });
-
-    // a non-2xx status means the request failed server-side
-    if (!response.ok) {
-      // surface a readable error to the caller instead of an unhandled rejection
-      throw new Error('Failed to fetch calorie history');
-    }
-
-    // parse and return the JSON array of { date, caloriesConsumed } rows
-    return await response.json();
+    return await request('/api/users/me/calorieHistory', { fallbackError: 'Failed to fetch calorie history' });
   } catch (error) {
-    // log for debugging, then...
+    // the History page shows its own error state
     console.error('Get calorie history error:', error);
-    // ...let the caller (the History page) handle showing an error state
     throw error;
   }
 };
 
 export const getAllergens = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/allergens`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch allergens');
-    }
-
-    return await response.json();
+    return await request('/api/allergens', { fallbackError: 'Failed to fetch allergens' });
   } catch (error) {
     console.error('Get allergens error:', error);
     throw error;
   }
 };
 
+// Staff and admin: add a name to the shared allergen list.
 export const addAllergen = async (name) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/allergens`, {
+    return await request('/api/allergens', {
       method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify({ name }),
+      body: { name },
+      fallbackError: 'Failed to add allergen',
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'Failed to add allergen');
-    }
-
-    return await response.json();
   } catch (error) {
     console.error('Add allergen error:', error);
     throw error;
@@ -196,97 +223,50 @@ export const addAllergen = async (name) => {
 
 export const logMeal = async (mealType, calories) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/me/mealLog`, {
+    return await request('/api/users/me/mealLog', {
       method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify({ mealType, calories }),
+      body: { mealType, calories },
+      fallbackError: 'Failed to log meal',
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'Failed to log meal');
-    }
-
-    return await response.json();
   } catch (error) {
     console.error('Log meal error:', error);
     throw error;
   }
 };
 
-// Check if user is authenticated
-export const isAuthenticated = () => {
-  return !!getAuthToken();
-};
-
 // Food API calls
 export const getAllFoods = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/foods`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch foods');
-    }
-    
-    return await response.json();
+    return await request('/api/foods', { fallbackError: 'Failed to fetch foods' });
   } catch (error) {
-    console.error('Get all foods error:', error);
+    console.error('Get foods error:', error);
     throw error;
   }
 };
 
 export const getFoodsWithinCalorieBudget = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/foods/withinCalorieBudget`, {
-      method: 'GET',
-      headers: createHeaders(true),
+    return await request('/api/foods/withinCalorieBudget', {
+      fallbackError: 'Failed to fetch calorie-budget-aware foods',
     });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch calorie-budget-aware foods');
-    }
-
-    return await response.json();
   } catch (error) {
-    console.error('Get foods within calorie budget error:', error);
+    console.error('Get calorie-budget foods error:', error);
     throw error;
   }
 };
 
 export const getFoodById = async (id) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/foods/${id}`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch food');
-    }
-    
-    return await response.json();
+    return await request(`/api/foods/${id}`, { fallbackError: 'Failed to fetch food' });
   } catch (error) {
-    console.error('Get food by id error:', error);
+    console.error('Get food error:', error);
     throw error;
   }
 };
 
 export const createFood = async (foodData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/foods`, {
-      method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify(foodData),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to create food');
-    }
-    
-    return await response.json();
+    return await request('/api/foods', { method: 'POST', body: foodData, fallbackError: 'Failed to create food' });
   } catch (error) {
     console.error('Create food error:', error);
     throw error;
@@ -295,17 +275,11 @@ export const createFood = async (foodData) => {
 
 export const updateFood = async (foodData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/foods/updateFood`, {
+    return await request('/api/foods/updateFood', {
       method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify(foodData),
+      body: foodData,
+      fallbackError: 'Failed to update food',
     });
-    
-    if (!response.ok) {
-      throw new Error('Failed to update food');
-    }
-    
-    return await response.json();
   } catch (error) {
     console.error('Update food error:', error);
     throw error;
@@ -314,21 +288,8 @@ export const updateFood = async (foodData) => {
 
 export const deleteFood = async (id) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/foods/${id}`, {
-      method: 'DELETE',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      if (response.status === 409) {
-        // Conflict: food is part of unfulfilled orders
-        throw new Error(errorText);
-      }
-      throw new Error('Failed to delete food');
-    }
-    
-    return await response.text();
+    // 409 carries the reason (the food is in an unfulfilled order).
+    return await request(`/api/foods/${id}`, { method: 'DELETE', fallbackError: 'Failed to delete food' });
   } catch (error) {
     console.error('Delete food error:', error);
     throw error;
@@ -338,16 +299,7 @@ export const deleteFood = async (id) => {
 // Inventory API calls
 export const getInventory = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/inventory`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch inventory');
-    }
-    
-    return await response.json();
+    return await request('/api/inventory', { fallbackError: 'Failed to fetch inventory' });
   } catch (error) {
     console.error('Get inventory error:', error);
     throw error;
@@ -356,17 +308,11 @@ export const getInventory = async () => {
 
 export const updateInventory = async (inventoryData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/inventory`, {
+    return await request('/api/inventory', {
       method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify(inventoryData),
+      body: inventoryData,
+      fallbackError: 'Failed to update inventory',
     });
-    
-    if (!response.ok) {
-      throw new Error('Failed to update inventory');
-    }
-    
-    return await response.json();
   } catch (error) {
     console.error('Update inventory error:', error);
     throw error;
@@ -374,36 +320,21 @@ export const updateInventory = async (inventoryData) => {
 };
 
 // Order API calls
+
+// Staff and admin: every order.
 export const getAllOrders = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch orders');
-    }
-    
-    return await response.json();
+    return await request('/api/orders', { fallbackError: 'Failed to fetch orders' });
   } catch (error) {
-    console.error('Get all orders error:', error);
+    console.error('Get orders error:', error);
     throw error;
   }
 };
 
+// Customer: your own orders.
 export const getMyOrders = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/my-orders`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch my orders');
-    }
-    
-    return await response.json();
+    return await request('/api/orders/my', { fallbackError: 'Failed to fetch my orders' });
   } catch (error) {
     console.error('Get my orders error:', error);
     throw error;
@@ -412,16 +343,7 @@ export const getMyOrders = async () => {
 
 export const getFulfilledOrders = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/fulfilledOrders`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch fulfilled orders');
-    }
-    
-    return await response.json();
+    return await request('/api/orders/fulfilledOrders', { fallbackError: 'Failed to fetch fulfilled orders' });
   } catch (error) {
     console.error('Get fulfilled orders error:', error);
     throw error;
@@ -430,16 +352,7 @@ export const getFulfilledOrders = async () => {
 
 export const getUnfulfilledOrders = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/unfulfilledOrders`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch unfulfilled orders');
-    }
-    
-    return await response.json();
+    return await request('/api/orders/unfulfilledOrders', { fallbackError: 'Failed to fetch unfulfilled orders' });
   } catch (error) {
     console.error('Get unfulfilled orders error:', error);
     throw error;
@@ -448,35 +361,16 @@ export const getUnfulfilledOrders = async () => {
 
 export const getOrderById = async (id) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/${id}`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch order');
-    }
-    
-    return await response.json();
+    return await request(`/api/orders/${id}`, { fallbackError: 'Failed to fetch order' });
   } catch (error) {
-    console.error('Get order by id error:', error);
+    console.error('Get order error:', error);
     throw error;
   }
 };
 
 export const createOrder = async (orderData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders`, {
-      method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify(orderData),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to create order');
-    }
-    
-    return await response.json();
+    return await request('/api/orders', { method: 'POST', body: orderData, fallbackError: 'Failed to create order' });
   } catch (error) {
     console.error('Create order error:', error);
     throw error;
@@ -485,73 +379,43 @@ export const createOrder = async (orderData) => {
 
 export const fulfillOrder = async (orderId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/fulfillOrder`, {
+    return await request('/api/orders/fulfillOrder', {
       method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify({ id: orderId }),
+      body: { id: orderId },
+      fallbackError: 'Failed to fulfill order',
     });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fulfill order');
-    }
-    
-    return await response.json();
   } catch (error) {
     console.error('Fulfill order error:', error);
     throw error;
   }
 };
 
-// Admin User Management API calls
+// Admin API calls
 export const getAllUsers = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch users');
-    }
-    
-    return await response.json();
+    return await request('/api/users', { fallbackError: 'Failed to fetch users' });
   } catch (error) {
-    console.error('Get all users error:', error);
+    console.error('Get users error:', error);
     throw error;
   }
 };
 
 export const getUserById = async (id) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/${id}`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch user');
-    }
-    
-    return await response.json();
+    return await request(`/api/users/${id}`, { fallbackError: 'Failed to fetch user' });
   } catch (error) {
-    console.error('Get user by id error:', error);
+    console.error('Get user error:', error);
     throw error;
   }
 };
 
 export const updateUserRole = async (id, role) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/${id}/role`, {
+    return await request(`/api/users/${id}/role`, {
       method: 'PUT',
-      headers: createHeaders(true),
-      body: JSON.stringify({ role }),
+      body: { role },
+      fallbackError: 'Failed to update user role',
     });
-    
-    if (!response.ok) {
-      throw new Error('Failed to update user role');
-    }
-    
-    return await response.json();
   } catch (error) {
     console.error('Update user role error:', error);
     throw error;
@@ -560,18 +424,8 @@ export const updateUserRole = async (id, role) => {
 
 export const deleteUser = async (id) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/users/${id}`, {
-      method: 'DELETE',
-      headers: createHeaders(true),
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to delete user');
-    }
-    
-    // Check if response has content before parsing JSON
-    const text = await response.text();
-    return text ? JSON.parse(text) : { success: true };
+    const result = await request(`/api/users/${id}`, { method: 'DELETE', fallbackError: 'Failed to delete user' });
+    return result === null ? { success: true } : result;
   } catch (error) {
     console.error('Delete user error:', error);
     throw error;
@@ -581,17 +435,11 @@ export const deleteUser = async (id) => {
 // Chat API calls
 export const sendChatMessage = async (message) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/chat`, {
+    return await request('/api/chat', {
       method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify({ message }),
+      body: { message },
+      fallbackError: 'Failed to send message to AI',
     });
-    
-    if (!response.ok) {
-      throw new Error('Failed to send message to AI');
-    }
-    
-    return await response.json();
   } catch (error) {
     console.error('Chat error:', error);
     throw error;
@@ -600,100 +448,49 @@ export const sendChatMessage = async (message) => {
 
 export const rateFoodItem = async (orderId, foodId, rating) => {
   try {
-    // Note: rating is passed as a query parameter (?rating=5.0)
-    const response = await fetch(`${API_BASE_URL}/api/foods/orders/${orderId}/${foodId}/rate?rating=${rating}`, {
+    // rating is a query parameter (?rating=5.0); a repeat or an undelivered
+    // order comes back with the backend's reason.
+    return await request(`/api/foods/orders/${orderId}/${foodId}/rate?rating=${rating}`, {
       method: 'POST',
-      headers: createHeaders(true),
+      fallbackError: 'Failed to submit rating',
     });
-    
-    if (!response.ok) {
-      // We try to get the error message from the backend (e.g., "You have already rated this...")
-      const errorText = await response.text();
-      throw new Error(errorText || 'Failed to submit rating');
-    }
-    
-    return await response.json();
   } catch (error) {
     console.error('Rate food error:', error);
     throw error;
   }
 };
 
+// Driver API calls
 export const fetchDriverDashboard = async (user) => {
-  const response = await fetch(`${API_BASE_URL}/api/driverStats?username=${encodeURIComponent(user)}`, {
-    method: "GET",
-    headers: createHeaders(true),
+  return request(`/api/driverStats?username=${encodeURIComponent(user)}`, {
+    fallbackError: 'Failed to fetch driver dashboard data',
   });
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch driver dashboard data");
-  }
-
-  return await response.json();
 };
 
 export const acknowledgeAllergyHandoff = async (orderId) => {
-  const response = await fetch(
-    `${API_BASE_URL}/api/orders/${orderId}/allergy-handoff/acknowledge`,
-    {
-      method: "POST",
-      headers: createHeaders(true),
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || "Failed to acknowledge allergy warning");
-  }
-
-  return await response.json();
+  return request(`/api/orders/${orderId}/allergy-handoff/acknowledge`, {
+    method: 'POST',
+    fallbackError: 'Failed to acknowledge allergy warning',
+  });
 };
 
 export const getAllergyHandoffStatus = async (orderId) => {
-  const response = await fetch(
-    `${API_BASE_URL}/api/orders/${orderId}/allergy-handoff/status`,
-    {
-      method: "GET",
-      headers: createHeaders(true),
-    }
-  );
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || "Failed to fetch allergy handoff status");
-  }
-
-  return await response.json();
+  return request(`/api/orders/${orderId}/allergy-handoff/status`, {
+    fallbackError: 'Failed to fetch allergy handoff status',
+  });
 };
 
 export const claimOrder = async (orderId) => {
-  const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/claim`, {
-    method: "POST",
-    headers: createHeaders(true),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || "Failed to claim order");
-  }
-
-  return await response.json();
+  return request(`/api/orders/${orderId}/claim`, { method: 'POST', fallbackError: 'Failed to claim order' });
 };
 
 export const updateOrderStatus = async (orderId, status, username) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+    return await request(`/api/orders/${orderId}`, {
       method: 'POST',
-      headers: createHeaders(true),
-      body: JSON.stringify({username, status}),
+      body: { username, status },
+      fallbackError: 'Failed to update order status',
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(errorText || 'Failed to update order status');
-    }
-
-    return await response.json();
   } catch (error) {
     console.error('Update order status error:', error);
     throw error;
@@ -702,34 +499,18 @@ export const updateOrderStatus = async (orderId, status, username) => {
 
 export const getAvailableOrders = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/availableOrders`, {
-      method: 'GET',
-      headers: createHeaders(true),
-    });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch unfulfilled orders');
-    }
-
-    return await response.json();
+    return await request('/api/orders/availableOrders', { fallbackError: 'Failed to fetch available orders' });
   } catch (error) {
-    console.error('Get unfulfilled orders error:', error);
+    console.error('Get available orders error:', error);
     throw error;
   }
 };
 
 export const getActiveOrders = async (username) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/orders/activeOrders/${username}`, {
-      method: 'GET',
-      headers: createHeaders(true),
+    return await request(`/api/orders/activeOrders/${encodeURIComponent(username)}`, {
+      fallbackError: 'Failed to fetch active orders',
     });
-
-    if (!response.ok) {
-      throw new Error('Failed to fetch active orders');
-    }
-
-    return await response.json();
   } catch (error) {
     console.error('Get active orders error:', error);
     throw error;
@@ -738,129 +519,73 @@ export const getActiveOrders = async (username) => {
 
 // Allergy trace-back API calls
 
-// Reads the backend's error message from a failed response, when it has one.
-const readErrorMessage = async (response, fallback) => {
-  try {
-    const data = await response.json();
-    if (data && data.message) {
-      return data.message;
-    }
-  } catch (parseError) {
-    // The body was not JSON, so use the fallback message.
-  }
-  return fallback;
-};
-
 // Staff: report that dishes may carry an allergen during a time window.
 export const reportRestaurantIncident = async (allergen, foodIds, windowStart, windowEnd) => {
-  const response = await fetch(`${API_BASE_URL}/api/incidents`, {
+  return request('/api/incidents', {
     method: 'POST',
-    headers: createHeaders(true),
-    body: JSON.stringify({ allergen, foodIds, windowStart, windowEnd }),
+    body: { allergen, foodIds, windowStart, windowEnd },
+    fallbackError: 'Failed to report the incident',
   });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to report the incident'));
-  }
-  return await response.json();
 };
 
 // Customer: report a reaction after one of your own orders.
 export const reportCustomerReaction = async (orderId, allergen) => {
-  const response = await fetch(`${API_BASE_URL}/api/incidents/reaction`, {
+  return request('/api/incidents/reaction', {
     method: 'POST',
-    headers: createHeaders(true),
-    body: JSON.stringify({ orderId, allergen }),
+    body: { orderId, allergen },
+    fallbackError: 'Failed to report the reaction',
   });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to report the reaction'));
-  }
-  return await response.json();
 };
 
 // Staff: list every incident, newest first.
 export const getIncidents = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/incidents`, {
-    method: 'GET',
-    headers: createHeaders(true),
-  });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to load incidents'));
-  }
-  return await response.json();
+  return request('/api/incidents', { fallbackError: 'Failed to load incidents' });
 };
 
 // Staff: acknowledge an incident and say what the restaurant offers.
 export const acknowledgeIncident = async (incidentId, remedy) => {
-  const response = await fetch(`${API_BASE_URL}/api/incidents/${incidentId}/acknowledge`, {
+  return request(`/api/incidents/${incidentId}/acknowledge`, {
     method: 'POST',
-    headers: createHeaders(true),
-    body: JSON.stringify({ remedy }),
+    body: { remedy },
+    fallbackError: 'Failed to acknowledge the incident',
   });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to acknowledge the incident'));
-  }
-  return await response.json();
 };
 
 // Staff: confirm which dishes in a pending customer report were at fault.
 // Only those dishes are traced, and affected customers are warned.
 export const confirmIncident = async (incidentId, foodIds) => {
-  const response = await fetch(`${API_BASE_URL}/api/incidents/${incidentId}/confirm`, {
+  return request(`/api/incidents/${incidentId}/confirm`, {
     method: 'POST',
-    headers: createHeaders(true),
-    body: JSON.stringify({ foodIds }),
+    body: { foodIds },
+    fallbackError: 'Failed to confirm the report',
   });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to confirm the report'));
-  }
-  return await response.json();
 };
 
 // Staff: close a pending customer report without warning anyone.
 export const dismissIncident = async (incidentId) => {
-  const response = await fetch(`${API_BASE_URL}/api/incidents/${incidentId}/dismiss`, {
+  return request(`/api/incidents/${incidentId}/dismiss`, {
     method: 'POST',
-    headers: createHeaders(true),
+    fallbackError: 'Failed to dismiss the report',
   });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to dismiss the report'));
-  }
-  return await response.json();
 };
 
 // Customer: your own safety notices, newest first.
 export const getMyNotifications = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/notifications/my`, {
-    method: 'GET',
-    headers: createHeaders(true),
-  });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to load notices'));
-  }
-  return await response.json();
+  return request('/api/notifications/my', { fallbackError: 'Failed to load notices' });
 };
 
 // Customer: how many of your notices you have not acknowledged yet.
 export const getMyUnreadNotificationCount = async () => {
-  const response = await fetch(`${API_BASE_URL}/api/notifications/my/unread-count`, {
-    method: 'GET',
-    headers: createHeaders(true),
+  const data = await request('/api/notifications/my/unread-count', {
+    fallbackError: 'Failed to load the notice count',
   });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to load the notice count'));
-  }
-  const data = await response.json();
   return data.count;
 };
 
 // Customer: acknowledge one of your notices.
 export const acknowledgeNotification = async (notificationId) => {
-  const response = await fetch(`${API_BASE_URL}/api/notifications/${notificationId}/acknowledge`, {
+  return request(`/api/notifications/${notificationId}/acknowledge`, {
     method: 'POST',
-    headers: createHeaders(true),
+    fallbackError: 'Failed to acknowledge the notice',
   });
-  if (!response.ok) {
-    throw new Error(await readErrorMessage(response, 'Failed to acknowledge the notice'));
-  }
-  return await response.json();
 };
