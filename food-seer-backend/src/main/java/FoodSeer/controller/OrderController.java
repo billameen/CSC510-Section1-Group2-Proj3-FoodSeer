@@ -187,8 +187,8 @@ public class OrderController {
         return ResponseEntity.ok(availableOrders);
     }
 
-    // Reuses the generic username-ownership resolver introduced for DriverStatsController.
-    @PreAuthorize("hasRole('ADMIN') or (hasRole('DRIVER') and @driverStatsAccess.isOwner(authentication, #username))")
+    // The principal is the username even after an email login, so ownership is a plain comparison.
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('DRIVER') and authentication.name == #username)")
     @GetMapping("/activeOrders/{username}")
     public ResponseEntity<?> getActiveOrders(@P("username") @PathVariable String username){
         logger.info("Fetching all picked up orders for the driver: {}", username);

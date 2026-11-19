@@ -5,7 +5,6 @@ import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.User;
 import FoodSeer.repositories.UserRepository;
 import FoodSeer.security.CustomUserDetailsService;
-import FoodSeer.security.DriverStatsAccess;
 import FoodSeer.security.JwtAuthenticationFilter;
 import FoodSeer.security.JwtTokenProvider;
 import FoodSeer.service.OrderService;
@@ -37,14 +36,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * The endpoint's @PreAuthorize previously had no enforcement at all (the
  * annotation was commented out), so any caller could read any driver's
  * active orders by guessing a username. This mirrors DriverStatsSecurityTest,
- * reusing the same DriverStatsAccess ownership resolver.
+ * checking ownership against the username principal.
  */
 @WebMvcTest(value = OrderController.class, properties = {
     "app.jwt-secret=Zm9vZHNlZXItdGVzdC1vbmx5LXNpZ25pbmcta2V5LTMyaXRlbXM=",
     "app.jwt-expiration-milliseconds=60000"
 })
 @Import({SpringSecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
-    CustomUserDetailsService.class, DriverStatsAccess.class,
+    CustomUserDetailsService.class,
     JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class OrderActiveOrdersSecurityTest {
     @Autowired private MockMvc mvc;

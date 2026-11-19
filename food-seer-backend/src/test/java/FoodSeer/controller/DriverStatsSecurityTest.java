@@ -5,7 +5,6 @@ import FoodSeer.dto.DriverStatsDto;
 import FoodSeer.entity.User;
 import FoodSeer.repositories.UserRepository;
 import FoodSeer.security.CustomUserDetailsService;
-import FoodSeer.security.DriverStatsAccess;
 import FoodSeer.security.JwtAuthenticationFilter;
 import FoodSeer.security.JwtTokenProvider;
 import FoodSeer.service.DriverStatsService;
@@ -36,7 +35,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "app.jwt-expiration-milliseconds=60000"
 })
 @Import({SpringSecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
-    CustomUserDetailsService.class, DriverStatsAccess.class,
+    CustomUserDetailsService.class,
     JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class DriverStatsSecurityTest {
     @Autowired private MockMvc mvc;

@@ -18,7 +18,7 @@ public class DriverStatsController {
     DriverStatsService driverStatsService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or (hasRole('DRIVER') and @driverStatsAccess.isOwner(authentication, #username))")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('DRIVER') and authentication.name == #username)")
     public ResponseEntity<?> getDriverStats(@P("username") @RequestParam("username") String username) {
 
         DriverStatsDto driverStatsDto = driverStatsService.getDriverStats(username);
