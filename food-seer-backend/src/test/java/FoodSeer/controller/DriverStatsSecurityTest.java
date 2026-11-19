@@ -3,6 +3,7 @@ package FoodSeer.controller;
 import FoodSeer.config.SpringSecurityConfig;
 import FoodSeer.dto.DriverStatsDto;
 import FoodSeer.entity.User;
+import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.repositories.UserRepository;
 import FoodSeer.security.CustomUserDetailsService;
 import FoodSeer.security.JwtAuthenticationFilter;
@@ -59,6 +60,8 @@ class DriverStatsSecurityTest {
                 new DriverStatsDto("driver1", 7, new BigDecimal("84.50"), new BigDecimal("4.5"), 2));
         when(statistics.getDriverStats("driver2")).thenReturn(
                 new DriverStatsDto("driver2", 3, new BigDecimal("31.25"), new BigDecimal("4.0"), 1));
+        // The service reports an unknown driver with a 404 (it used to return null).
+        when(statistics.getDriverStats("missing")).thenThrow(new ResourceNotFoundException("No driver statistics"));
     }
 
     @ParameterizedTest

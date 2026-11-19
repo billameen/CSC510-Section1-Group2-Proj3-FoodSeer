@@ -17,6 +17,7 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import FoodSeer.dto.DriverStatsDto;
+import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.entity.DriverStats;
 import FoodSeer.mapper.DriverStatsMapper;
 import FoodSeer.repositories.DriverStatsRepository;
@@ -52,13 +53,13 @@ class DriverStatsImplTest {
     }
 
     @Test
-    void getDriverStats_returnsNull_whenNotFound() {
+    void getDriverStats_throwsNotFound_whenNotFound() {
+        // Changed in Milestone 2: used to return null, which the endpoint sent
+        // back as 200 with an empty body. Now a 404.
         String username = "unknown";
         when(driverStatsRepository.findByUsername(eq(username))).thenReturn(Optional.empty());
 
-        DriverStatsDto result = driverStatsService.getDriverStats(username);
-
-        assertNull(result);
+        assertThrows(ResourceNotFoundException.class, () -> driverStatsService.getDriverStats(username));
         verify(driverStatsRepository, times(1)).findByUsername(eq(username));
     }
 
