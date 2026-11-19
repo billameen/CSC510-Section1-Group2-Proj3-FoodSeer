@@ -356,6 +356,31 @@ class AuthorizationMatrixTest {
         }
     }
 
+    /**
+     * 401 and 403 from the security layer must carry CORS headers, or the
+     * browser reports them as network errors and the frontend can't tell an
+     * expired session from a dead server.
+     */
+    @Test
+    void securityErrorsCarryCorsHeaders() throws Exception {
+        final String origin = "http://localhost:3000";
+        final var anonymous = mvc.perform(request(HttpMethod.GET, "/api/orders").header("Origin", origin))
+                .andReturn().getResponse();
+        final var badToken = mvc.perform(request(HttpMethod.GET, "/api/users/me").header("Origin", origin)
+                .header("Authorization", "Bearer not.a.token")).andReturn().getResponse();
+        final var forbidden = mvc.perform(request(HttpMethod.GET, "/api/orders").header("Origin", origin)
+                .header("Authorization", bearer("customer"))).andReturn().getResponse();
+
+        for (final var response : List.of(anonymous, badToken, forbidden)) {
+            if (response.getHeader("Access-Control-Allow-Origin") == null) {
+                throw new AssertionError(response.getStatus() + " response has no Access-Control-Allow-Origin");
+            }
+        }
+        assertStatus("anonymous", "401", anonymous.getStatus());
+        assertStatus("bad token", "401", badToken.getStatus());
+        assertStatus("customer listing all orders", "403", forbidden.getStatus());
+    }
+
     private int perform(final String caller, final String method, final String path, final String body)
             throws Exception {
         MockHttpServletRequestBuilder req = request(HttpMethod.valueOf(method), path);
