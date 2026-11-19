@@ -258,22 +258,25 @@ class OrderControllerTest {
     @Test
     @Transactional
     void testGetMyOrders_Unauthorized() throws Exception {
+        // Anonymous is 401 now that /api/orders/** is no longer permitAll (was 403).
         mvc.perform(get("/api/orders/my-orders"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
     @Transactional
     void testGetMyFulfilledOrders_Unauthorized() throws Exception {
+        // Anonymous is 401 now that /api/orders/** is no longer permitAll (was 403).
         mvc.perform(get("/api/orders/my-orders/fulfilled"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
     @Transactional
     void testGetMyUnfulfilledOrders_Unauthorized() throws Exception {
+        // Anonymous is 401 now that /api/orders/** is no longer permitAll (was 403).
         mvc.perform(get("/api/orders/my-orders/unfulfilled"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

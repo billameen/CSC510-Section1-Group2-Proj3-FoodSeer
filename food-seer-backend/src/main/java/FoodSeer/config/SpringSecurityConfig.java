@@ -4,7 +4,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -58,15 +57,18 @@ public class SpringSecurityConfig {
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests( ( authorize ) -> {
+                // Only login and sign-up are open. Everything else needs a valid
+                // token here AND a role rule (@PreAuthorize) on its controller
+                // method, so no endpoint relies on just one of the two. The full
+                // table is docs/authorization-matrix.md.
                 authorize.requestMatchers( "/auth/**" ).permitAll();
                 authorize.requestMatchers( HttpMethod.OPTIONS, "/**" ).permitAll(); // allows preflight
-                authorize.requestMatchers( HttpMethod.GET, "/api/locations/{id:[0-9]+}" ).permitAll();
-                authorize.requestMatchers( HttpMethod.GET, "/api/driverStats", "/api/driverStats/**").authenticated();
-                authorize.requestMatchers( HttpMethod.GET, "/api/orders/**").permitAll();
-                authorize.requestMatchers( HttpMethod.POST, "/api/orders/**").permitAll();
                 authorize.anyRequest().authenticated();
             })
-            .httpBasic(Customizer.withDefaults());
+            // JWT only. HTTP Basic would accept a password on every request
+            // and answer anonymous calls with a browser login prompt.
+            .httpBasic( ( basic ) -> basic.disable() )
+            .formLogin( ( form ) -> form.disable() );
 
         http.addFilterBefore( authenticationFilter, UsernamePasswordAuthenticationFilter.class );
 

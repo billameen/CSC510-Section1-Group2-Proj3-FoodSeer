@@ -71,12 +71,11 @@ class OrderActiveOrdersSecurityTest {
     @ParameterizedTest
     @ValueSource(strings = {"driver1", "missing"})
     void anonymousRequestsAreDenied(String username) throws Exception {
-        // /api/orders/** stays permitAll at the URL level (unlike /api/driverStats,
-        // which was tightened to authenticated()), so denial happens in method
-        // security and anonymous callers see 403 here, not 401 - consistent with
-        // this controller's other method-secured-only endpoints (e.g. /my-orders).
+        // /api/orders/** used to be permitAll at the URL level, so anonymous
+        // callers were stopped only by method security and saw 403. Milestone 2
+        // removed that rule; they are now rejected as unauthenticated (401).
         mvc.perform(get("/api/orders/activeOrders/{username}", username))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         verifyNoInteractions(orderService);
     }
 
