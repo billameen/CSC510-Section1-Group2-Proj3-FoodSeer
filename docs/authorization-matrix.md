@@ -135,3 +135,22 @@ Error bodies never include stack traces or SQL. `GlobalExceptionHandler` maps:
 | Rating a dish | Any signed-in user, any order | The order's own customer, once per dish |
 | `/api/my-orders...` | `GET /api/orders/my-orders...` | `GET /api/orders/my...` |
 | HTTP Basic | Enabled alongside JWT | Disabled |
+
+## Existing staff accounts
+
+Before Milestone 2 anyone could pick "Staff" on the public sign-up form, so
+a database may hold staff accounts that nobody approved. They are **not**
+demoted automatically: the database doesn't record whether a staff account
+signed up itself or was promoted by an admin, so a blanket migration would
+also demote real staff.
+
+Instead, after deploying, an admin should open User Management, review every
+account with the Staff role, and change any that shouldn't be staff to
+Customer. From then on, staff accounts can only be created or promoted by an
+admin.
+
+## Setup change
+
+The default admin's password now comes from the `FOODSEER_ADMIN_PASSWORD`
+environment variable (see INSTALL.md). It is used only when no `admin`
+account exists, so existing databases keep their current admin password.
