@@ -3,7 +3,6 @@ package FoodSeer.service;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import java.lang.reflect.Method;
 import java.util.Map;
 
 import FoodSeer.constant.Roles;
@@ -61,44 +60,56 @@ public class AuthServiceImplTest {
         authService = new AuthServiceImpl(userRepository, driverStatsRepository, fitnessDataService, passwordEncoder, authManager, jwtService);
     }
 
+    /** A valid customer sign-up; tests change one field at a time. */
+    private static RegisterRequestDto req(String username, String email, String password, String role) {
+        return new RegisterRequestDto(username, email, password, role);
+    }
+
+    private static RegisterRequestDto customer(String username) {
+        return req(username, username + "@example.com", "strongPassword", "customer");
+    }
+
     @Test
     void register_whenUsernameExists_returnsBadRequest() {
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-        when(req.username()).thenReturn("takenUser");
         when(userRepository.existsByUsername("takenUser")).thenReturn(true);
 
-        ResponseEntity<Map<String, String>> resp = authService.register(req);
+        ResponseEntity<Map<String, String>> resp = authService.register(customer("takenUser"));
 
         assertEquals(400, resp.getStatusCodeValue());
-        assertTrue(resp.getBody().containsKey("error"));
         assertEquals("Username already taken", resp.getBody().get("error"));
         verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
     void register_whenInvalidUsernameChars_returnsBadRequest() {
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-        when(req.username()).thenReturn("bad$user");
-        when(userRepository.existsByUsername("bad$user")).thenReturn(false);
-
-        ResponseEntity<Map<String, String>> resp = authService.register(req);
+        ResponseEntity<Map<String, String>> resp = authService.register(customer("bad$user"));
 
         assertEquals(400, resp.getStatusCodeValue());
-        assertTrue(resp.getBody().containsKey("error"));
+        assertTrue(resp.getBody().get("error").startsWith("Username"));
         verify(userRepository, never()).save(any(User.class));
     }
 
     @Test
-    void register_whenPasswordTooShort_returnsBadRequest() {
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-        when(req.username()).thenReturn("validUser");
-        when(userRepository.existsByUsername("validUser")).thenReturn(false);
-        when(req.password()).thenReturn("a"); // too short per implementation
+    void register_allowsDigitsInUsername() {
+        when(userRepository.existsByUsername("sid2026")).thenReturn(false);
+        when(userRepository.existsByEmail("sid2026@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("strongPassword")).thenReturn("hashedPwd");
 
-        ResponseEntity<Map<String, String>> resp = authService.register(req);
+        ResponseEntity<Map<String, String>> resp = authService.register(customer("sid2026"));
+
+        assertEquals(200, resp.getStatusCodeValue());
+        verify(userRepository).save(any(User.class));
+    }
+
+    @Test
+    void register_whenPasswordTooShort_returnsBadRequest() {
+        when(userRepository.existsByUsername("validUser")).thenReturn(false);
+
+        ResponseEntity<Map<String, String>> resp = authService
+                .register(req("validUser", "valid@example.com", "a", "customer"));
 
         assertEquals(400, resp.getStatusCodeValue());
-        assertTrue(resp.getBody().containsKey("error"));
+        assertTrue(resp.getBody().get("error").startsWith("Password"));
         verify(userRepository, never()).save(any(User.class));
     }
 
@@ -106,15 +117,12 @@ public class AuthServiceImplTest {
     void register_whenPasswordSevenChars_returnsBadRequest() {
         // Boundary check: the stated policy is a minimum of 8 characters, so
         // a 7-character password must still be rejected.
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-        when(req.username()).thenReturn("validUser");
         when(userRepository.existsByUsername("validUser")).thenReturn(false);
-        when(req.password()).thenReturn("abc1234"); // 7 chars
 
-        ResponseEntity<Map<String, String>> resp = authService.register(req);
+        ResponseEntity<Map<String, String>> resp = authService
+                .register(req("validUser", "valid@example.com", "abc1234", "customer"));
 
         assertEquals(400, resp.getStatusCodeValue());
-        assertTrue(resp.getBody().containsKey("error"));
         verify(userRepository, never()).save(any(User.class));
     }
 
@@ -122,35 +130,90 @@ public class AuthServiceImplTest {
     void register_whenPasswordEightChars_isAccepted() {
         // Boundary check: an 8-character password meets the stated minimum
         // and should be accepted.
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-        when(req.username()).thenReturn("validUser");
-        when(req.password()).thenReturn("abc12345"); // 8 chars
-        when(req.email()).thenReturn("validUser@example.com");
-        when(req.role()).thenReturn("customer");
         when(userRepository.existsByUsername("validUser")).thenReturn(false);
+        when(userRepository.existsByEmail("validUser@example.com")).thenReturn(false);
         when(passwordEncoder.encode("abc12345")).thenReturn("hashedPwd");
 
-        ResponseEntity<Map<String, String>> resp = authService.register(req);
+        ResponseEntity<Map<String, String>> resp = authService
+                .register(req("validUser", "validUser@example.com", "abc12345", "customer"));
 
         assertEquals(200, resp.getStatusCodeValue());
         verify(userRepository, times(1)).save(any(User.class));
     }
 
     @Test
+    void register_whenEmailInvalid_saysEmail() {
+        when(userRepository.existsByUsername("validUser")).thenReturn(false);
+
+        ResponseEntity<Map<String, String>> resp = authService
+                .register(req("validUser", "not-an-email", "strongPassword", "customer"));
+
+        assertEquals(400, resp.getStatusCodeValue());
+        assertEquals("Please enter a valid email address", resp.getBody().get("error"));
+    }
+
+    @Test
+    void register_whenEmailTaken_returnsBadRequest() {
+        when(userRepository.existsByUsername("second")).thenReturn(false);
+        when(userRepository.existsByEmail("second@example.com")).thenReturn(true);
+
+        ResponseEntity<Map<String, String>> resp = authService.register(customer("second"));
+
+        assertEquals(400, resp.getStatusCodeValue());
+        assertEquals("Email already in use", resp.getBody().get("error"));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void register_rejectsMissingEmptyAndUnknownRoles() {
+        for (String role : new String[] { null, "", "  ", "wizard", "ROLE_WIZARD" }) {
+            ResponseEntity<Map<String, String>> resp = authService
+                    .register(req("validUser", "valid@example.com", "strongPassword", role));
+
+            assertEquals(400, resp.getStatusCodeValue(), "role " + role);
+            assertTrue(resp.getBody().get("error").toLowerCase().contains("role"), "role " + role);
+        }
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void register_rejectsStaffAndAdmin() {
+        for (String role : new String[] { "staff", "STAFF", "ROLE_STAFF", "admin" }) {
+            ResponseEntity<Map<String, String>> resp = authService
+                    .register(req("validUser", "valid@example.com", "strongPassword", role));
+
+            assertEquals(400, resp.getStatusCodeValue(), "role " + role);
+        }
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void createAccount_allowsStaffForAdmins() {
+        when(userRepository.existsByUsername("newStaff")).thenReturn(false);
+        when(userRepository.existsByEmail("newStaff@example.com")).thenReturn(false);
+        when(passwordEncoder.encode("strongPassword")).thenReturn("hashedPwd");
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+
+        ResponseEntity<Map<String, String>> resp = authService
+                .createAccount(req("newStaff", "newStaff@example.com", "strongPassword", "staff"));
+
+        assertEquals(200, resp.getStatusCodeValue());
+        verify(userRepository).save(saved.capture());
+        assertEquals("ROLE_STAFF", saved.getValue().getRole());
+    }
+
+    @Test
     void register_whenDriverRole_createsUserAndDriverStats() {
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-        when(req.username()).thenReturn("driverOne");
-        when(req.password()).thenReturn("strongPassword");
-        when(req.email()).thenReturn("driver1@example.com");
-        when(req.role()).thenReturn("driver");
         when(userRepository.existsByUsername("driverOne")).thenReturn(false);
+        when(userRepository.existsByEmail("driver1@example.com")).thenReturn(false);
         when(passwordEncoder.encode("strongPassword")).thenReturn("hashedPwd");
 
         // capture saved user and driverStats
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
         ArgumentCaptor<DriverStats> statsCaptor = ArgumentCaptor.forClass(DriverStats.class);
 
-        ResponseEntity<Map<String, String>> resp = authService.register(req);
+        ResponseEntity<Map<String, String>> resp = authService
+                .register(req("driverOne", "driver1@example.com", "strongPassword", "driver"));
 
         assertEquals(200, resp.getStatusCodeValue());
         assertEquals("Registered", resp.getBody().get("message"));
@@ -159,6 +222,7 @@ public class AuthServiceImplTest {
         User saved = userCaptor.getValue();
         assertEquals("driverOne", saved.getUsername());
         assertEquals("hashedPwd", saved.getPassword());
+        assertEquals(Roles.ROLE_DRIVER, saved.getRole());
 
         verify(driverStatsRepository, times(1)).save(statsCaptor.capture());
         DriverStats ds = statsCaptor.getValue();
@@ -175,15 +239,11 @@ public class AuthServiceImplTest {
      */
     @Test
     void register_whenCustomerRole_generatesFitnessData() {
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-        when(req.username()).thenReturn("newCustomer");
-        when(req.password()).thenReturn("strongPassword");
-        when(req.email()).thenReturn("newcustomer@example.com");
-        when(req.role()).thenReturn("customer");
         when(userRepository.existsByUsername("newCustomer")).thenReturn(false);
+        when(userRepository.existsByEmail("newCustomer@example.com")).thenReturn(false);
         when(passwordEncoder.encode("strongPassword")).thenReturn("hashedPwd");
 
-        ResponseEntity<Map<String, String>> resp = authService.register(req);
+        ResponseEntity<Map<String, String>> resp = authService.register(customer("newCustomer"));
 
         assertEquals(200, resp.getStatusCodeValue());
         verify(fitnessDataService, times(1)).generateFitnessDataIfMissing("newCustomer");
@@ -201,31 +261,6 @@ public class AuthServiceImplTest {
 
         assertThrows(BadCredentialsException.class, () -> authService.login(req));
         verify(authManager, times(1)).authenticate(any());
-    }
-
-    @Test
-    void setCorrectRoles_mapsRolesCorrectly() throws Exception {
-        Method m = AuthServiceImpl.class.getDeclaredMethod("setCorrectRoles", RegisterRequestDto.class);
-        m.setAccessible(true);
-
-        RegisterRequestDto req = mock(RegisterRequestDto.class);
-
-        when(req.role()).thenReturn("driver");
-        Object res = m.invoke(authService, req);
-        assertEquals(Roles.ROLE_DRIVER, res);
-
-        when(req.role()).thenReturn("customer");
-        res = m.invoke(authService, req);
-        assertEquals(Roles.ROLE_CUSTOMER, res);
-
-        when(req.role()).thenReturn("staff");
-        res = m.invoke(authService, req);
-        assertEquals(Roles.ROLE_STAFF, res);
-
-        // unknown/empty role should return empty string per implementation
-        when(req.role()).thenReturn("unknownRole");
-        res = m.invoke(authService, req);
-        assertEquals("", res);
     }
 
 }
