@@ -240,27 +240,23 @@ def test_unauthenticated_request_is_rejected_from_protected_endpoint():
 
 
 def test_login_fails_for_account_with_no_valid_role():
-    """This proves Use Case #4 Extension 5a:
+    """This proves Use Case #4 Extension 5a.
 
-    A user account not associated with a valid role should still be able to
-    log in, receive a clear error, and not be redirected to a dashboard.
+    It used to document a defect: registration stored an empty role for
+    any unrecognized value, and that account then failed at login with
+    "A granted authority textual representation is required".
 
-    KNOWN DEFECT: AuthServiceImpl.register silently accepts any role string
-    it doesn't recognize (e.g. "wizard") by storing an empty role instead of
-    rejecting the registration (see Use Case #3 Extension 2f finding on
-    missing roles; this is the sibling case of an unrecognized-but-present
-    role). That empty role then breaks Spring Security's authority parsing
-    at login time, so the account can never log in again -- the backend
-    returns HTTP 401 with the technical message "A granted authority textual
-    representation is required" instead of a user-facing message that
-    mentions a role must be selected. This test is expected to FAIL until
-    role values are validated at registration time.
+    Since Milestone 2 roles are validated, so the account can't be created
+    at all, and the error says the role is the problem. (An old account
+    that already has an invalid role now gets a 401 at login saying it has
+    no valid role; see CustomUserDetailsServiceTest.)
     """
     user = unique_user(prefix="login_uc_badrole")
     user["role"] = "not-a-real-role"
 
     reg_status, reg_body = api_request("POST", "/auth/register", user)
-    assert reg_status == 200, reg_body
+    assert reg_status == 400, reg_body
+    assert "role" in error_text(reg_body).lower()
 
     login_status, login_body = api_request(
         "POST",
@@ -268,4 +264,3 @@ def test_login_fails_for_account_with_no_valid_role():
         {"username": user["username"], "password": user["password"]},
     )
     assert login_status == 401, login_body
-    assert "role" in error_text(login_body).lower()

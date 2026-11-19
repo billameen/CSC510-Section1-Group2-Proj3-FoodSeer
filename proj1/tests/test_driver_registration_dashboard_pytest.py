@@ -109,7 +109,10 @@ def test_register_and_login_as_driver_allows_dashboard_access():
     stats_path = "/api/driverStats?" + urllib.parse.urlencode(
         {"username": driver["username"]}
     )
-    stats_status, stats_body = api_request("GET", stats_path)
+    # Driver stats need the driver's own login (they were open before).
+    stats_status, stats_body = api_request(
+        "GET", stats_path, token=login_body["accessToken"]
+    )
     assert stats_status == 200, stats_body
     assert stats_body["username"] == driver["username"]
     assert "totalDeliveries" in stats_body
