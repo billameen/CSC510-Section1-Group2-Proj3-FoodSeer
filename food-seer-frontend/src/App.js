@@ -15,7 +15,7 @@ import Quiz from './pages/Quiz';
 import PersonalDiet from './pages/PersonalDiet';
 // the new per-day calorie-consumption history page, linked from Personal Diet's "History" button
 import CalorieHistory from './pages/CalorieHistory';
-import AdminRoute from './components/AdminRoute';
+import RoleRoute from './components/RoleRoute';
 import Dashboard from './pages/Dashboard';
 import Navigation from './components/Navigation';
 import DriverDashboard from './pages/DriverDashboard';
@@ -112,11 +112,11 @@ function App() {
           <Route
             path="/inventory-dashboard"
             element={
-              <AdminRoute>
+              <RoleRoute roles={['ROLE_ADMIN']}>
                 <AppLayout>
                   <Dashboard />
                 </AppLayout>
-              </AdminRoute>
+              </RoleRoute>
             }
           />
           
@@ -154,11 +154,11 @@ function App() {
           <Route
           path="/order-dashboard"
           element={
-            <AdminRoute>
+            <RoleRoute roles={['ROLE_ADMIN']}>
               <AppLayout>
                 <Dashboard type="orders" />
               </AppLayout>
-            </AdminRoute>
+            </RoleRoute>
           }
           />
 
@@ -166,21 +166,21 @@ function App() {
           <Route 
             path="/order-management" 
             element={
-              <ProtectedRoute>
+              <RoleRoute roles={['ROLE_STAFF', 'ROLE_ADMIN']}>
                 <AppLayout>
                   <OrderManagement />
                 </AppLayout>
-              </ProtectedRoute>
+              </RoleRoute>
             } 
           />
           <Route 
             path="/inventory-management" 
             element={
-              <ProtectedRoute>
+              <RoleRoute roles={['ROLE_STAFF', 'ROLE_ADMIN']}>
                 <AppLayout>
                   <InventoryManagement />
                 </AppLayout>
-              </ProtectedRoute>
+              </RoleRoute>
             } 
           />
           
@@ -188,22 +188,22 @@ function App() {
           <Route 
             path="/users" 
             element={
-              <ProtectedRoute>
+              <RoleRoute roles={['ROLE_ADMIN']}>
                 <AppLayout>
                   <UserManagement />
                 </AppLayout>
-              </ProtectedRoute>
+              </RoleRoute>
             } 
           />
 
           <Route
             path="/driver-dashboard"
             element={
-              <ProtectedRoute>
+              <RoleRoute roles={['ROLE_DRIVER']}>
                   <AppLayout>
                     <DriverDashboard />
                   </AppLayout>
-                </ProtectedRoute>
+                </RoleRoute>
               }
             />
 

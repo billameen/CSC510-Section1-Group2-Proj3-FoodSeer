@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { login, getCurrentUser } from '../services/api';
+import { homeFor } from '../components/RoleRoute';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -31,16 +32,9 @@ const Login = () => {
       // Fetch user data to determine role and redirect accordingly
       const user = await getCurrentUser();
       
-      if (user.role === 'ROLE_ADMIN' || user.role === 'ROLE_STAFF') {
-        // Admins and Staff skip customer flow, go directly to Order Management
-        navigate('/order-management');
-      } else if (user.role === 'ROLE_DRIVER'){
-        navigate('/driver-dashboard');
-      }
-        // Standard users go to preferences
-      else{
-        navigate('/preferences');
-      }
+      // Admins and staff go to Order Management, drivers to their dashboard,
+      // customers to preferences (same map RoleRoute uses).
+      navigate(homeFor(user.role));
     } catch (err) {
       setError('Invalid username or password');
     } finally {
