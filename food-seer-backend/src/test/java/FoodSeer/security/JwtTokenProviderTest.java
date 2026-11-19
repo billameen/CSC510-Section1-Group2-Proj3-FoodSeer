@@ -64,9 +64,28 @@ class JwtTokenProviderTest {
         assertNotNull(key);
     }
 
+    // Changed in Milestone 2: an invalid token used to throw (a 500 from the
+    // filter); it now returns false so the request is just unauthenticated (401).
     @Test
-    void testInvalidTokenThrows() {
-        assertThrows(Exception.class, () -> jwtTokenProvider.validateToken("invalid.token"));
+    void testInvalidTokenIsRejected() {
+        assertFalse(jwtTokenProvider.validateToken("invalid.token"));
+        assertFalse(jwtTokenProvider.validateToken(""));
+    }
+
+    @Test
+    void testExpiredTokenIsRejected() {
+        ReflectionTestUtils.setField(jwtTokenProvider, "jwtExpirationDate", -1000L);
+        String token = jwtTokenProvider.generateToken(new UsernamePasswordAuthenticationToken("testuser", null));
+
+        assertFalse(jwtTokenProvider.validateToken(token));
+    }
+
+    @Test
+    void testTokenSignedWithAnotherKeyIsRejected() {
+        String token = jwtTokenProvider.generateToken(new UsernamePasswordAuthenticationToken("testuser", null));
+        ReflectionTestUtils.setField(jwtTokenProvider, "jwtSecret", "anothersecret12345678901234567890");
+
+        assertFalse(jwtTokenProvider.validateToken(token));
     }
     
     @Test

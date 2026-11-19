@@ -1,6 +1,7 @@
 package FoodSeer.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -87,13 +88,19 @@ public class JwtTokenProvider {
     /**
      * Checks the token is valid.
      * @param token token to check
-     * @return true if valid
+     * @return true if the signature and expiry are valid, false otherwise
      */
     public boolean validateToken(String token) {
-        Jwts.parserBuilder()
-                .setSigningKey(key())
-                .build()
-                .parseClaimsJws(token);
-        return true;
+        try {
+            Jwts.parserBuilder()
+                    .setSigningKey(key())
+                    .build()
+                    .parseClaimsJws(token);
+            return true;
+        } catch (final JwtException | IllegalArgumentException e) {
+            // Expired, tampered, malformed or empty: the caller is simply not
+            // authenticated. Never let this surface as a 500.
+            return false;
+        }
     }
 }

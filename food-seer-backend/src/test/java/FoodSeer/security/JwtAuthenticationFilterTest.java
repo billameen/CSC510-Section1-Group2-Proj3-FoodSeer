@@ -64,4 +64,32 @@ class JwtAuthenticationFilterTest {
 
         assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
+
+    @Test
+    void testInvalidTokenClearsAnyExistingAuthentication() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("leftover", null, java.util.Collections.emptyList()));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer not.a.token");
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilterInternal(request, new MockHttpServletResponse(), chain);
+
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        assertNotNull(chain.getRequest(), "the request still continues, unauthenticated");
+        verifyNoInteractions(userDetailsService);
+    }
+
+    @Test
+    void testTokenForDeletedUserLeavesRequestUnauthenticated() throws Exception {
+        String token = tokenProvider.generateToken(new UsernamePasswordAuthenticationToken("gone", null));
+        when(userDetailsService.loadUserByUsername("gone"))
+                .thenThrow(new org.springframework.security.core.userdetails.UsernameNotFoundException("gone"));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer " + token);
+
+        filter.doFilterInternal(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
 }
