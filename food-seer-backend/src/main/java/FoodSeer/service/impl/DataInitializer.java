@@ -4,12 +4,15 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import FoodSeer.constant.UserRole;
 import FoodSeer.entity.User;
 import FoodSeer.entity.Role;
 import FoodSeer.entity.Food;
@@ -25,13 +28,16 @@ import FoodSeer.repositories.AllergenRepository;
 @Component
 public class DataInitializer {
 
+    private static final Logger logger = LoggerFactory.getLogger(DataInitializer.class);
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final FoodRepository foodRepository;
     private final AllergenRepository allergenRepository;
     private final PasswordEncoder passwordEncoder;
 
-    @Value("${app.admin-user-password:admin}")
+    /** Read from the FOODSEER_ADMIN_PASSWORD environment variable; never logged. */
+    @Value("${FOODSEER_ADMIN_PASSWORD:}")
     private String adminPassword;
 
     public DataInitializer(UserRepository userRepository,
@@ -49,34 +55,28 @@ public class DataInitializer {
     @EventListener(ApplicationReadyEvent.class)
     public void onApplicationReady() {
         // Ensure roles exist
-        if (roleRepository.findByName("ROLE_ADMIN") == null) {
-            roleRepository.save(new Role(null, "ROLE_ADMIN"));
-        }
-        if (roleRepository.findByName("ROLE_CUSTOMER") == null) {
-            roleRepository.save(new Role(null, "ROLE_CUSTOMER"));
-        }
-        if (roleRepository.findByName("ROLE_STAFF") == null) {
-            roleRepository.save(new Role(null, "ROLE_STAFF"));
+        for (final UserRole role : UserRole.values()) {
+            if (roleRepository.findByName(role.authority()) == null) {
+                roleRepository.save(new Role(null, role.authority()));
+            }
         }
 
-        // Ensure admin user exists or update password
-        User admin = userRepository.findByUsername("admin").orElse(null);
-        if (admin == null) {
-            final String hash = passwordEncoder.encode(adminPassword);
-            admin = User.builder()
-                    .username("admin")
-                    .email("admin@localhost")
-                    .password(hash)
-                    .role("ROLE_ADMIN")
-                    .build();
-            userRepository.save(admin);
-            System.out.println("Created default admin user 'admin' with password: " + adminPassword);
-        } else {
-            // Update admin password if it has changed
-            final String hash = passwordEncoder.encode(adminPassword);
-            admin.setPassword(hash);
-            userRepository.save(admin);
-            System.out.println("Updated admin user password to: " + adminPassword);
+        // Create the default admin only if there is none. An existing admin's
+        // password is never touched here; change it from the app instead.
+        if (userRepository.findByUsername("admin").isEmpty()) {
+            if (adminPassword == null || adminPassword.isBlank()) {
+                logger.warn("No admin account exists and FOODSEER_ADMIN_PASSWORD is not set, so none was created. "
+                        + "Set it and restart to create the 'admin' account.");
+            } else {
+                final User admin = User.builder()
+                        .username("admin")
+                        .email("admin@localhost")
+                        .password(passwordEncoder.encode(adminPassword))
+                        .role(UserRole.ADMIN.authority())
+                        .build();
+                userRepository.save(admin);
+                logger.info("Created the default 'admin' account from FOODSEER_ADMIN_PASSWORD.");
+            }
         }
 
         // Seed the shared allergen list with the original fixed vocabulary, once.

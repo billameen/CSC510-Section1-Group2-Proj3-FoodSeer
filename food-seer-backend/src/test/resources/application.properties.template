@@ -10,5 +10,5 @@ spring.jpa.properties.hibernate.temp.use_jdbc_metadata_defaults=false
 app.jwt-secret=
 # Expiration time in milliseconds - 7 days
 app.jwt-expiration-milliseconds=604800000
-# Plain text password for default admin user
-app.admin-user-password=default
+# The default admin password is not set here. DataInitializer reads the
+# FOODSEER_ADMIN_PASSWORD environment variable (see INSTALL.md).
