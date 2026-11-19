@@ -253,7 +253,7 @@ def test_customer_can_rate_food_from_fulfilled_order():
 
     orders_status, orders_body = api_request(
         "GET",
-        "/api/orders/my-orders",
+        "/api/orders/my",
         token=customer_token,
     )
 

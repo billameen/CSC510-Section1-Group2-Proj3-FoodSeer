@@ -201,7 +201,7 @@ def test_customer_can_access_role_appropriate_endpoint():
     """
     user, token = register_and_login("login_uc_access_ok", "customer")
 
-    status, body = api_request("GET", "/api/orders/my-orders", token=token)
+    status, body = api_request("GET", "/api/orders/my", token=token)
     assert status == 200, body
 
 
@@ -225,7 +225,7 @@ def test_driver_is_blocked_from_customer_only_endpoint():
     """
     user, token = register_and_login("login_uc_driver_blocked", "driver")
 
-    status, body = api_request("GET", "/api/orders/my-orders", token=token)
+    status, body = api_request("GET", "/api/orders/my", token=token)
     assert status == 403, body
 
 

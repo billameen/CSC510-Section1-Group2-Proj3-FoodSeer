@@ -191,7 +191,7 @@ def test_created_order_appears_in_customer_orders():
 
     orders_status, orders_body = api_request(
         "GET",
-        "/api/orders/my-orders",
+        "/api/orders/my",
         token=token,
     )
 

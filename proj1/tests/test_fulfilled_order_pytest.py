@@ -48,7 +48,7 @@ def create_order(token, food, name):
 def test_fulfilling_an_order_updates_status_and_both_order_lists(admin):
     """This proves the main success scenario and both stated postconditions:
     fulfilling an order marks it fulfilled, and it then appears in both
-    /api/orders/fulfilledOrders and the owning customer's /my-orders/fulfilled."""
+    /api/orders/fulfilledOrders and the owning customer's /my/fulfilled."""
     customer, customer_token = register_and_login("customer", "fulfill_customer")
     food = get_in_stock_food(customer_token)
     order = create_order(customer_token, food, "UC6 Pytest Order")
@@ -66,7 +66,7 @@ def test_fulfilling_an_order_updates_status_and_both_order_lists(admin):
     assert any(o["id"] == order["id"] for o in all_fulfilled), all_fulfilled
 
     my_fulfilled_status, my_fulfilled = api_request(
-        "GET", "/api/orders/my-orders/fulfilled", token=customer_token
+        "GET", "/api/orders/my/fulfilled", token=customer_token
     )
     assert my_fulfilled_status == 200, my_fulfilled
     assert any(o["id"] == order["id"] for o in my_fulfilled), my_fulfilled
