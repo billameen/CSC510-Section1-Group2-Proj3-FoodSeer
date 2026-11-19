@@ -1,5 +1,6 @@
 package FoodSeer.service.impl;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ import FoodSeer.entity.User;
 import FoodSeer.repositories.FoodRepository;
 import FoodSeer.repositories.OrderRepository;
 import FoodSeer.service.InventoryService;
+import FoodSeer.service.OrderPricing;
 import FoodSeer.service.OrderService;
 import FoodSeer.service.UserService;
 
@@ -60,29 +62,43 @@ public class OrderServiceImpl implements OrderService {
     private DriverStatsService driverStatsService;
 
     /**
-     * Creates an order with the given information.
+     * Creates an order for the signed-in customer. Only the order's name and
+     * the ids of its foods are taken from the request. Cost, delivery cost and
+     * status are set here, so a client can't choose its own price or skip
+     * ahead in the delivery flow.
      *
      * @param orderDto order to create
      * @return created order
      */
     @Override
     public OrderDto createOrder(final OrderDto orderDto) {
-        // Load actual Food entities from database (managed entities)
+        if (orderDto == null || orderDto.getFoods() == null || orderDto.getFoods().isEmpty()) {
+            throw new IllegalArgumentException("An order needs at least one item.");
+        }
+
+        // Load actual Food entities from database (managed entities), so the
+        // prices come from the menu and not from the request.
         final List<Food> foods = new ArrayList<>();
         for (final Food food : orderDto.getFoods()) {
+            if (food == null || food.getId() == null) {
+                throw new IllegalArgumentException("Every item in an order needs a food id.");
+            }
             final Food f = foodRepository.findById(food.getId())
                     .orElseThrow(() -> new ResourceNotFoundException("A Food item does not exist within the order."));
             foods.add(f);
         }
+
+        final BigDecimal itemsTotal = OrderPricing.itemsTotal(foods);
+        final BigDecimal deliveryCost = OrderPricing.deliveryCost(itemsTotal);
 
         // Create order entity directly (not using mapper to avoid creating new Food objects)
         final Order order = new Order();
         order.setName(orderDto.getName());
         order.setFoods(foods);
         order.setIsFulfilled(false);
-        order.setCost(orderDto.getCost());
-        order.setStatus(orderDto.getStatus());
-        order.setDeliveryCost(orderDto.getDeliveryCost());
+        order.setCost(itemsTotal.add(deliveryCost));
+        order.setDeliveryCost(deliveryCost);
+        order.setStatus("Placed");
         // stamp the creation time so CalorieBudgetServiceImpl can later tell which orders were placed "today"
         order.setCreatedAt(java.time.LocalDateTime.now());
         
