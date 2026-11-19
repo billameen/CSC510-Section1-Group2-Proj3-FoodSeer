@@ -5,6 +5,7 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,6 +54,7 @@ public class FoodController {
      * The ID of the food to return
      * @return The food
      */
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'DRIVER', 'STAFF', 'ADMIN')")
     @GetMapping ( "{id}" )
     public ResponseEntity<FoodDto> getFood ( @PathVariable ( "id" ) final Long id ) {
         final FoodDto foodDto = foodService.getFoodById( id );
@@ -66,6 +68,7 @@ public class FoodController {
      * The food DTO to create
      * @return response from creation
      */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @PostMapping
     public ResponseEntity<FoodDto> createFood ( @RequestBody final FoodDto foodDto ) {
         if ( foodService.isDuplicateName( foodDto.getFoodName() ) ) {
@@ -86,6 +89,7 @@ public class FoodController {
      *
      * @return JSON representation of all foods
      */
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'DRIVER', 'STAFF', 'ADMIN')")
     @GetMapping
     public List<FoodDto> getFoods () {
         return foodService.getAllFoods();
@@ -100,6 +104,7 @@ public class FoodController {
      * @return the calorie-aware recommendation
      */
     // new endpoint: GET /api/foods/withinCalorieBudget
+    @PreAuthorize("hasRole('CUSTOMER')")
     @GetMapping ( "/withinCalorieBudget" )
     public ResponseEntity<FoodRecommendationDto> getFoodsWithinCalorieBudget () {
         // resolve who's calling, via Spring Security's context
@@ -119,6 +124,7 @@ public class FoodController {
      * Id of the food to delete
      * @return Response Entity
      */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @DeleteMapping ( "{id}" )
     public ResponseEntity<String> deleteFood ( @PathVariable ( "id" ) final Long foodId ) {
         try {
@@ -137,6 +143,7 @@ public class FoodController {
      * FoodDto containing the updated fields
      * @return ResponseEntity containing the updated FoodDto
      */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @PostMapping ( "/updateFood" )
     public ResponseEntity<FoodDto> updateFood ( @RequestBody final FoodDto foodDto ) {
         // Check if food exists first by ID or name
