@@ -22,6 +22,7 @@ import FoodSeer.dto.IncidentDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Incident;
 import FoodSeer.entity.Notification;
+import FoodSeer.constant.OrderStatus;
 import FoodSeer.entity.Order;
 import FoodSeer.entity.User;
 import FoodSeer.exception.ResourceNotFoundException;
@@ -273,6 +274,10 @@ public class TraceServiceImpl implements TraceService {
                 continue;
             }
             for (final Order order : ordersWithFood) {
+                // A cancelled order was never cooked or delivered, so nobody ate it.
+                if (order.getStatus() == OrderStatus.CANCELLED) {
+                    continue;
+                }
                 final LocalDateTime placedAt = order.getCreatedAt();
                 if (placedAt == null) {
                     continue;
