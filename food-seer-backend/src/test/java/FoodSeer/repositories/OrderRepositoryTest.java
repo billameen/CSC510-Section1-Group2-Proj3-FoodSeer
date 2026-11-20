@@ -1,6 +1,7 @@
 // java
 package FoodSeer.repositories;
 
+import FoodSeer.constant.OrderStatus;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -116,7 +117,7 @@ class OrderRepositoryTest {
     }
 
     /**
-     * Tests repository query methods: findOrdersContainingFood and findByUser / findByUserAndIsFulfilled.
+     * Tests repository query methods: findOrdersContainingFood and findByUser / findByUserAndStatusIn.
      */
     @Test
     @Transactional
@@ -138,13 +139,15 @@ class OrderRepositoryTest {
         assertEquals(1, ordersWithCoffee.size(), "Should find one order containing COFFEE");
         assertTrue(ordersWithCoffee.stream().anyMatch(o -> o.getId().equals(savedOrder.getId())));
 
-        // Verify findByUser and findByUserAndIsFulfilled
+        // Verify findByUser and findByUserAndStatusIn
         User user = userRepository.findAll().get(0); // the created customer
         var ordersByUser = orderRepository.findByUser(user);
         assertTrue(ordersByUser.size() >= 1, "User should have at least one order");
 
-        var unfulfilledByUser = orderRepository.findByUserAndIsFulfilled(user, false);
-        assertTrue(unfulfilledByUser.stream().anyMatch(o -> o.getId().equals(savedOrder.getId())),
-                "Saved order should appear as unfulfilled for the user");
+        var placedByUser = orderRepository.findByUserAndStatusIn(user, List.of(OrderStatus.PLACED));
+        assertTrue(placedByUser.stream().anyMatch(o -> o.getId().equals(savedOrder.getId())),
+                "Saved order should appear as placed for the user");
+        assertTrue(orderRepository.findByUserAndStatusIn(user, List.of(OrderStatus.DELIVERED)).stream()
+                .noneMatch(o -> o.getId().equals(savedOrder.getId())), "and not as delivered");
     }
 }

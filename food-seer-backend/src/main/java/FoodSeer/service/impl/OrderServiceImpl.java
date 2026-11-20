@@ -41,6 +41,10 @@ import FoodSeer.service.UserService;
 @Service
 public class OrderServiceImpl implements OrderService {
 
+    /** Orders still on their way: placed, claimed or picked up. Not delivered or cancelled. */
+    private static final List<OrderStatus> ACTIVE = List.of(OrderStatus.PLACED, OrderStatus.CLAIMED,
+            OrderStatus.PICKED_UP);
+
     Logger logger = LoggerFactory.getLogger(OrderServiceImpl.class);
     /** Repository for food items. */
     @Autowired
@@ -187,21 +191,17 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public List<OrderDto> getAllFulfilledOrders() {
-        return getAllOrders().stream()
-                .filter(OrderDto::getIsFulfilled)
-                .collect(Collectors.toList());
+        return map(orderRepository.findByStatus(OrderStatus.DELIVERED));
     }
 
     /**
-     * Returns all unfulfilled orders.
+     * Returns orders that are still active (placed, claimed or picked up).
      *
      * @return list of unfulfilled orders
      */
     @Override
     public List<OrderDto> getAllUnfulfilledOrders() {
-        return getAllOrders().stream()
-                .filter(o -> !o.getIsFulfilled())
-                .collect(Collectors.toList());
+        return map(orderRepository.findByStatusIn(ACTIVE));
     }
 
     /**
@@ -232,12 +232,12 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalStateException("No authenticated user found");
         }
         
-        final List<Order> orders = orderRepository.findByUserAndIsFulfilled(currentUser, true);
-        return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
+        return map(orderRepository.findByUserAndStatusIn(currentUser, List.of(OrderStatus.DELIVERED)));
     }
 
     /**
-     * Returns unfulfilled orders for the current authenticated user.
+     * Returns the current user's orders that are still active (placed,
+     * claimed or picked up).
      *
      * @return list of current user's unfulfilled orders
      */
@@ -248,8 +248,7 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalStateException("No authenticated user found");
         }
         
-        final List<Order> orders = orderRepository.findByUserAndIsFulfilled(currentUser, false);
-        return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
+        return map(orderRepository.findByUserAndStatusIn(currentUser, ACTIVE));
     }
 
     /**
@@ -292,6 +291,10 @@ public class OrderServiceImpl implements OrderService {
         final Order order = load(orderId);
         return OrderMapper.mapToOrderDto(stateMachine.transition(order, OrderStatus.CANCELLED,
                 userService.getCurrentUser()));
+    }
+
+    private static List<OrderDto> map(final List<Order> orders) {
+        return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
     }
 
     private Order load(final Long orderId) {

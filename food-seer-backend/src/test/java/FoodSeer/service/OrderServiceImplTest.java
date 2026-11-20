@@ -176,26 +176,19 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void getAllOrders_and_filtersFulfilled_unfulfilled() {
-        Order o1 = new Order(); o1.setId(1L);
-        Order o2 = new Order(); o2.setId(2L);
-        when(orderRepository.findAll()).thenReturn(List.of(o1, o2));
+    void fulfilledAndActiveListsComeFromStatusQueries() {
+        Order delivered = new Order(1L, "A");
+        Order active = new Order(2L, "B");
+        when(orderRepository.findByStatus(OrderStatus.DELIVERED)).thenReturn(List.of(delivered));
+        when(orderRepository.findByStatusIn(List.of(OrderStatus.PLACED, OrderStatus.CLAIMED, OrderStatus.PICKED_UP)))
+                .thenReturn(List.of(active));
         try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
-            OrderDto d1 = new OrderDto(1L, "A"); d1.setIsFulfilled(true);
-            OrderDto d2 = new OrderDto(2L, "B"); d2.setIsFulfilled(false);
-            mocked.when(() -> OrderMapper.mapToOrderDto(o1)).thenReturn(d1);
-            mocked.when(() -> OrderMapper.mapToOrderDto(o2)).thenReturn(d2);
+            mocked.when(() -> OrderMapper.mapToOrderDto(delivered)).thenReturn(new OrderDto(1L, "A"));
+            mocked.when(() -> OrderMapper.mapToOrderDto(active)).thenReturn(new OrderDto(2L, "B"));
 
-            List<OrderDto> all = orderService.getAllOrders();
-            assertEquals(2, all.size());
-
-            List<OrderDto> fulfilled = orderService.getAllFulfilledOrders();
-            assertEquals(1, fulfilled.size());
-            assertTrue(fulfilled.get(0).getIsFulfilled());
-
-            List<OrderDto> unfulfilled = orderService.getAllUnfulfilledOrders();
-            assertEquals(1, unfulfilled.size());
-            assertFalse(unfulfilled.get(0).getIsFulfilled());
+            assertEquals(1L, orderService.getAllFulfilledOrders().get(0).getId());
+            // Active excludes CANCELLED as well as DELIVERED.
+            assertEquals(2L, orderService.getAllUnfulfilledOrders().get(0).getId());
         }
     }
 
@@ -214,8 +207,9 @@ class OrderServiceImplTest {
 
         Order o = new Order(); o.setId(7L);
         when(orderRepository.findByUser(user)).thenReturn(List.of(o));
-        when(orderRepository.findByUserAndIsFulfilled(user, true)).thenReturn(List.of(o));
-        when(orderRepository.findByUserAndIsFulfilled(user, false)).thenReturn(List.of(o));
+        when(orderRepository.findByUserAndStatusIn(user, List.of(OrderStatus.DELIVERED))).thenReturn(List.of(o));
+        when(orderRepository.findByUserAndStatusIn(user,
+                List.of(OrderStatus.PLACED, OrderStatus.CLAIMED, OrderStatus.PICKED_UP))).thenReturn(List.of(o));
 
         try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
             mocked.when(() -> OrderMapper.mapToOrderDto(o)).thenReturn(new OrderDto(7L, "UOrder"));
