@@ -134,6 +134,32 @@ public class FoodServiceImplTest {
     }
 
     @Test
+    public void testAddFoodAfterAnotherWasDeleted() {
+        // The deleted food stays linked to the inventory; adding the next
+        // food used to re-save it by name and fail with a 404.
+        final FoodDto gone = foodService.createFood(new FoodDto("SOON GONE", 4, 2, Arrays.asList("NONE")));
+        foodService.deleteFood(gone.getId());
+
+        final FoodDto next = foodService.createFood(new FoodDto("NEXT ITEM", 6, 3, Arrays.asList("NONE")));
+
+        assertNotNull(next.getId());
+        assertTrue(foodService.getAllFoods().stream().anyMatch(f -> f.getId().equals(next.getId())));
+    }
+
+    @Test
+    public void testReAddDeletedFoodName() {
+        final FoodDto old = foodService.createFood(new FoodDto("SEASONAL", 4, 2, Arrays.asList("NONE")));
+        foodService.deleteFood(old.getId());
+
+        final FoodDto again = foodService.createFood(new FoodDto("SEASONAL", 9, 5, Arrays.asList("NONE")));
+        foodService.createFood(new FoodDto("OTHER ITEM", 1, 1, Arrays.asList("NONE")));
+
+        assertNotEquals(old.getId(), again.getId());
+        assertEquals(9, foodService.getFoodById(again.getId()).getAmount());
+        assertEquals(1, foodService.getAllFoods().stream().filter(f -> "SEASONAL".equals(f.getFoodName())).count());
+    }
+
+    @Test
     public void testDeleteFoodNotFound() {
         Long badId = 9999L;
         ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class, () ->
