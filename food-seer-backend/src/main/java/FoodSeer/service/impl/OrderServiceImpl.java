@@ -282,6 +282,18 @@ public class OrderServiceImpl implements OrderService {
         return OrderMapper.mapToOrderDto(stateMachine.transition(order, to, userService.getCurrentUser()));
     }
 
+    /**
+     * Cancels an order; the state machine checks who may cancel it and
+     * releases its stock.
+     */
+    @Override
+    @Transactional
+    public OrderDto cancelOrder(final Long orderId) {
+        final Order order = load(orderId);
+        return OrderMapper.mapToOrderDto(stateMachine.transition(order, OrderStatus.CANCELLED,
+                userService.getCurrentUser()));
+    }
+
     private Order load(final Long orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order does not exist with id " + orderId));

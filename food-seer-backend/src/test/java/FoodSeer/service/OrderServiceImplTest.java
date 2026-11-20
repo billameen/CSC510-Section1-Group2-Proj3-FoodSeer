@@ -279,6 +279,22 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void cancelOrder_usesTheStateMachine() {
+        Order order = new Order(310L, "Lunch");
+        User customer = new User();
+        customer.setUsername("cust");
+        when(orderRepository.findById(310L)).thenReturn(Optional.of(order));
+        when(userService.getCurrentUser()).thenReturn(customer);
+        when(stateMachine.transition(order, OrderStatus.CANCELLED, customer)).thenReturn(order);
+
+        try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
+            mocked.when(() -> OrderMapper.mapToOrderDto(order)).thenReturn(new OrderDto(310L, "Lunch"));
+            assertEquals(310L, orderService.cancelOrder(310L).getId());
+        }
+        verify(stateMachine).transition(order, OrderStatus.CANCELLED, customer);
+    }
+
+    @Test
     void claimOrder_unknownOrderIsNotFound() {
         when(orderRepository.findById(404L)).thenReturn(Optional.empty());
 

@@ -203,6 +203,7 @@ class AuthorizationMatrixTest {
             row("POST", "/api/orders", "{\"name\":\"Lunch\",\"foods\":[{\"id\":1}]}", "401 OK 403 403 403"),
             row("GET", "/api/orders/1", null, "401 OK OK OK OK"),
             row("POST", "/api/orders/1", "{\"username\":\"driver\",\"status\":\"Picked Up\"}", "401 403 OK 403 403"),
+            row("POST", "/api/orders/1/cancel", null, "401 OK 403 OK OK"),
             row("POST", "/api/orders/1/claim", null, "401 403 OK 403 403"),
             row("GET", "/api/orders/availableOrders", null, "401 403 OK 403 OK"),
             row("GET", "/api/orders/activeOrders/driver", null, "401 403 OK 403 OK"),
@@ -238,6 +239,7 @@ class AuthorizationMatrixTest {
             Arguments.of("customer2", "GET", "/api/orders/1", null, 403),
             Arguments.of("driver2", "GET", "/api/orders/1", null, 403),
             Arguments.of("customer2", "POST", "/api/foods/orders/1/1/rate?rating=5", null, 403),
+            Arguments.of("customer2", "POST", "/api/orders/1/cancel", null, 403),
             Arguments.of("driver2", "GET", "/api/orders/activeOrders/driver", null, 403),
             Arguments.of("driver2", "GET", "/api/driverStats?username=driver", null, 403),
             // The customer's own order, reached by logging in with their email address.

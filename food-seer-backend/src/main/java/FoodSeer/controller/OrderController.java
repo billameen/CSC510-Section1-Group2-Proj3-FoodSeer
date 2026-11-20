@@ -147,6 +147,21 @@ public class OrderController {
         return ResponseEntity.ok(updatedOrderDto);
     }
 
+    /**
+     * Cancels an order and releases its reserved stock. A customer can cancel
+     * their own order until a driver claims it; staff and admin can cancel
+     * any order that hasn't been delivered.
+     *
+     * @param id the order
+     * @return the cancelled order; 409 if it can't be cancelled any more
+     */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')"
+            + " or (hasRole('CUSTOMER') and @orderAccess.isOwner(authentication, #id))")
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<OrderDto> cancelOrder(@P("id") @PathVariable("id") final Long id) {
+        return ResponseEntity.ok(orderService.cancelOrder(id));
+    }
+
     @PreAuthorize("hasRole('DRIVER')")
     @PostMapping("/{id}/claim")
     public ResponseEntity<OrderDto> claimOrder(@PathVariable("id") final Long id) {

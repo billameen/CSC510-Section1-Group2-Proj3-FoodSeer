@@ -76,6 +76,14 @@ public interface OrderService {
     OrderDto updateOrder(final Long id, String username, String status);
     OrderDto claimOrder(Long orderId);
 
+    /**
+     * Cancels an order and releases its reserved stock.
+     *
+     * @param orderId the order
+     * @return the cancelled order
+     */
+    OrderDto cancelOrder(Long orderId);
+
     List<OrderDto> getAvailableOrders();
 
     List<OrderDto> getActiveOrders(String username);

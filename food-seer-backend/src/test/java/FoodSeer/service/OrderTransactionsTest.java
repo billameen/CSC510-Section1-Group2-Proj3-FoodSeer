@@ -111,6 +111,22 @@ class OrderTransactionsTest {
         assertEquals(3, foodRepository.findById(coffee.getId()).orElseThrow().getAmount());
     }
 
+    @Test
+    void cancellingReleasesTheReservedStockOnce() {
+        final Food coffee = food("TXN CANCEL COFFEE", 5);
+        final OrderDto order = new OrderDto(null, "Changed my mind");
+        order.setFoods(List.of(ref(coffee), ref(coffee)));
+        final Long id = orderService.createOrder(order).getId();
+        assertEquals(3, foodRepository.findById(coffee.getId()).orElseThrow().getAmount());
+
+        orderService.cancelOrder(id);
+
+        assertEquals(5, foodRepository.findById(coffee.getId()).orElseThrow().getAmount());
+        assertEquals(OrderStatus.CANCELLED, orderRepository.findById(id).orElseThrow().getStatus());
+        assertThrows(IllegalStateException.class, () -> orderService.cancelOrder(id));
+        assertEquals(5, foodRepository.findById(coffee.getId()).orElseThrow().getAmount(), "released only once");
+    }
+
     private void driver(final String name) {
         userRepository.save(User.builder().username(name).email(name + "@example.test").password("x")
                 .role("ROLE_DRIVER").build());

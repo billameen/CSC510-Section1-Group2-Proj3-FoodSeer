@@ -75,6 +75,7 @@ Two rules apply to every row:
 | POST | `/api/orders` | 401 | ✅ | 403 | 403 | 403 | Server sets cost, delivery cost and status (`Placed`) |
 | GET | `/api/orders/{id}` | 401 | ✅ own order | ✅ assigned driver | ✅ | ✅ | Another customer, or a driver not assigned to it, is 403 |
 | POST | `/api/orders/{id}` | 401 | 403 | ✅ assigned driver | 403 | 403 | Delivery status update; an unassigned driver is 403 |
+| POST | `/api/orders/{id}/cancel` | 401 | ✅ own order | 403 | ✅ | ✅ | Releases reserved stock. A customer only while it's Placed (409 after a driver claims it); staff and admin until it's delivered |
 | POST | `/api/orders/{id}/claim` | 401 | 403 | ✅ | 403 | 403 | |
 | GET | `/api/orders/availableOrders` | 401 | 403 | ✅ | 403 | ✅ | |
 | GET | `/api/orders/activeOrders/{username}` | 401 | 403 | ✅ self | 403 | ✅ | Another driver's username is 403 |
