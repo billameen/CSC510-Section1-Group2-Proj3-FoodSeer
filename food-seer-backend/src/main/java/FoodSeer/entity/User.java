@@ -40,6 +40,15 @@ public class User {
     @Column ( nullable = false, length = 20 )
     private String role = "ROLE_CUSTOMER";
 
+    /**
+     * False once an admin deletes the account. The user can't log in and isn't
+     * listed, but the row stays so their past orders (and allergy trace-back
+     * over them) keep working. Their username and email stay taken.
+     */
+    @Builder.Default
+    @Column ( nullable = false, columnDefinition = "boolean default true" )
+    private boolean active = true;
+
     @Column ( length = 50 )
     private String costPreference;
 
@@ -63,6 +72,7 @@ public class User {
         this.dietaryRestrictions = o.getDietaryRestrictions();
         // carry the calorie goal through this copy-constructor, same as the other preference fields above
         this.dailyCalorieGoal = o.getDailyCalorieGoal();
+        this.active = o.isActive();
     }
 
     public User ( final RegisterRequestDto o, final String pass, final String role ) {
@@ -70,6 +80,8 @@ public class User {
         this.email = o.email();
         this.password = pass;
         this.role = role;
+        // Set explicitly: Lombok's @Builder.Default doesn't apply in hand-written constructors.
+        this.active = true;
     }
 
 }

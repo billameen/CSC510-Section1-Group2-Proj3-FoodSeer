@@ -39,6 +39,9 @@ public class CustomUserDetailsService implements UserDetailsService {
         final User user = userRepository.findByUsernameOrEmail( usernameOrEmail, usernameOrEmail )
                 .orElseThrow( () -> new UsernameNotFoundException(
                         "User " + usernameOrEmail + " does not exist with the given username or email." ) );
+        if ( !user.isActive() ) {
+            throw new DisabledException( "This account has been deleted." );
+        }
         // An account whose stored role is empty or invented (possible before
         // roles were validated) can't be authorized for anything; say so at
         // login instead of failing on an empty authority.

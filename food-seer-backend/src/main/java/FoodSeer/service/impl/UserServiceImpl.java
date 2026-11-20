@@ -5,31 +5,19 @@ import org.springframework.stereotype.Service;
 
 import FoodSeer.constant.UserRole;
 import FoodSeer.entity.DriverStats;
-import FoodSeer.entity.Order;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.repositories.DriverStatsRepository;
 import FoodSeer.entity.User;
-// used to clean up a user's meal logs before deleting them, in deleteUser below
-import FoodSeer.repositories.MealLogRepository;
-import FoodSeer.repositories.OrderRepository;
 import FoodSeer.repositories.UserRepository;
 import FoodSeer.service.UserService;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
-import java.util.List;
 import java.util.Optional;
 
 @Service
 public class UserServiceImpl implements UserService {
     @Autowired
     private UserRepository userRepository;
-    
-    @Autowired
-    private OrderRepository orderRepository;
-
-    // used by deleteUser below to avoid an FK-constraint failure on delete
-    @Autowired
-    private MealLogRepository mealLogRepository;
 
     // gives a user promoted to driver the stats row the driver dashboard reads
     @Autowired
@@ -49,12 +37,12 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public java.util.List<User> listUsers() {
-        return userRepository.findAll();
+        return userRepository.findByActiveTrue();
     }
 
     @Override
     public User findById(final Long id) {
-        return userRepository.findById(id).orElse(null);
+        return userRepository.findById(id).filter(User::isActive).orElse(null);
     }
 
     /**
@@ -66,7 +54,7 @@ public class UserServiceImpl implements UserService {
     @Override
     public User updateUserRole(final Long id, final String role) {
         final UserRole newRole = UserRole.parse(role);
-        final Optional<User> u = userRepository.findById(id);
+        final Optional<User> u = userRepository.findById(id).filter(User::isActive);
         if (u.isEmpty()) return null;
         final User user = u.get();
         if (isLastAdmin(user) && newRole != UserRole.ADMIN) {
@@ -82,14 +70,15 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Deletes a user and their orders and meal logs. An admin can't delete
-     * their own account, and nobody can delete the last admin (409 for both),
-     * so the team can't lock itself out of user management.
+     * Deletes a user's account. It is a soft delete: the account is
+     * deactivated (no login, not listed) but its orders and meal logs stay, so
+     * order history and allergy trace-back over those orders keep working. An
+     * admin can't delete their own account, and nobody can delete the last
+     * admin (409 for both), so the team can't lock itself out.
      */
     @Override
     public void deleteUser(final Long id) {
-        // First, find the user
-        final User user = userRepository.findById(id)
+        final User user = userRepository.findById(id).filter(User::isActive)
                 .orElseThrow(() -> new ResourceNotFoundException("User does not exist with id " + id));
 
         final User caller = getCurrentUser();
@@ -100,22 +89,13 @@ public class UserServiceImpl implements UserService {
             throw new IllegalStateException("You cannot delete the last admin.");
         }
 
-        // Delete all orders associated with this user
-        final List<Order> userOrders = orderRepository.findByUser(user);
-        orderRepository.deleteAll(userOrders);
-
-        // Delete all meal logs associated with this user (same FK-constraint
-        // reasoning as orders above - deleting the user first would fail).
-        // look up then delete, same two-step pattern used for orders above
-        mealLogRepository.deleteAll(mealLogRepository.findByUser(user));
-
-        // Now delete the user
-        userRepository.deleteById(id);
+        user.setActive(false);
+        userRepository.save(user);
     }
 
     private boolean isLastAdmin(final User user) {
         return UserRole.ADMIN.authority().equals(user.getRole())
-                && userRepository.countByRole(UserRole.ADMIN.authority()) <= 1;
+                && userRepository.countByRoleAndActiveTrue(UserRole.ADMIN.authority()) <= 1;
     }
 
     @Override

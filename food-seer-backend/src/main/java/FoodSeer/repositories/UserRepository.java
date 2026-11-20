@@ -34,13 +34,18 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByUsernameOrEmail ( String usernameOrEmail, String usernameOrEmail2 );
 
     /**
-     * Counts users with the given stored role, for example ROLE_ADMIN. Used to
-     * stop the last admin being deleted or demoted.
+     * Counts active users with the given stored role, for example ROLE_ADMIN.
+     * Used to stop the last admin being deleted or demoted.
      *
      * @param role
      *            the stored role
      * @return how many users have it
      */
-    long countByRole ( String role );
+    long countByRoleAndActiveTrue ( String role );
+
+    /**
+     * @return users whose accounts haven't been deleted
+     */
+    java.util.List<User> findByActiveTrue ();
 
 }
