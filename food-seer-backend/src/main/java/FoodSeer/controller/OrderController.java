@@ -79,35 +79,6 @@ public class OrderController {
     }
 
     /**
-     * Marks an order as fulfilled.
-     *
-     * @param orderDto the order to fulfill
-     * @return ResponseEntity with status depending on fulfillment result
-     */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    @PostMapping("/fulfillOrder")
-    public ResponseEntity<OrderDto> fulfillOrder(@RequestBody final OrderDto orderDto) {
-        try {
-            orderService.getOrderById(orderDto.getId());
-        } catch (final ResourceNotFoundException e) {
-            return new ResponseEntity<>(orderDto, HttpStatus.PRECONDITION_FAILED);
-        }
-
-        final OrderDto existingOrder = orderService.getOrderById(orderDto.getId());
-
-        if (existingOrder.getIsFulfilled()) {
-            return new ResponseEntity<>(orderDto, HttpStatus.GONE);
-        }
-
-        try {
-            final OrderDto updatedOrder = orderService.fulfillOrder(existingOrder.getId());
-            return ResponseEntity.ok(updatedOrder);
-        } catch (final Exception e) {
-            return new ResponseEntity<>(orderDto, HttpStatus.BAD_REQUEST);
-        }
-    }
-
-    /**
      * Retrieves a specific order by ID: staff and admin, the customer who
      * placed it, or the driver assigned to it.
      *

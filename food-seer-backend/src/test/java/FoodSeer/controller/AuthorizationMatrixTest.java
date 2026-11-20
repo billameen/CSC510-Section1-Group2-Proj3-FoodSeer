@@ -201,7 +201,6 @@ class AuthorizationMatrixTest {
             row("GET", "/api/orders/my/fulfilled", null, "401 OK 403 403 403"),
             row("GET", "/api/orders/my/unfulfilled", null, "401 OK 403 403 403"),
             row("POST", "/api/orders", "{\"name\":\"Lunch\",\"foods\":[{\"id\":1}]}", "401 OK 403 403 403"),
-            row("POST", "/api/orders/fulfillOrder", "{\"id\":1}", "401 403 403 OK OK"),
             row("GET", "/api/orders/1", null, "401 OK OK OK OK"),
             row("POST", "/api/orders/1", "{\"username\":\"driver\",\"status\":\"Picked Up\"}", "401 403 OK 403 403"),
             row("POST", "/api/orders/1/claim", null, "401 403 OK 403 403"),
@@ -294,7 +293,6 @@ class AuthorizationMatrixTest {
         when(foodService.isDuplicateName("PAD THAI")).thenReturn(true);
         final OrderDto orderDto = new OrderDto(1L, "Lunch");
         when(orderService.getOrderById(1L)).thenReturn(orderDto);
-        when(orderService.fulfillOrder(anyLong())).thenReturn(orderDto);
         when(driverStatsService.getDriverStats("driver"))
                 .thenReturn(new DriverStatsDto("driver", 1, BigDecimal.ONE, BigDecimal.ONE, 0));
         final AllergyAcknowledgment ack = mock(AllergyAcknowledgment.class);

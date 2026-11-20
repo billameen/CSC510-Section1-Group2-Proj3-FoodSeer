@@ -73,7 +73,6 @@ Two rules apply to every row:
 | GET | `/api/orders/my/fulfilled` | 401 | ✅ | 403 | 403 | 403 | |
 | GET | `/api/orders/my/unfulfilled` | 401 | ✅ | 403 | 403 | 403 | |
 | POST | `/api/orders` | 401 | ✅ | 403 | 403 | 403 | Server sets cost, delivery cost and status (`Placed`) |
-| POST | `/api/orders/fulfillOrder` | 401 | 403 | 403 | ✅ | ✅ | |
 | GET | `/api/orders/{id}` | 401 | ✅ own order | ✅ assigned driver | ✅ | ✅ | Another customer, or a driver not assigned to it, is 403 |
 | POST | `/api/orders/{id}` | 401 | 403 | ✅ assigned driver | 403 | 403 | Delivery status update; an unassigned driver is 403 |
 | POST | `/api/orders/{id}/claim` | 401 | 403 | ✅ | 403 | 403 | |
@@ -127,7 +126,7 @@ Error bodies never include stack traces or SQL. `GlobalExceptionHandler` maps:
 | `POST /auth/register` with `role: staff` | Created a staff account | 400; an admin creates staff with `POST /api/users` |
 | `GET /api/orders`, `fulfilledOrders`, `GET /api/orders/{id}` | Any customer could read every order, including other customers' allergies | Staff and admin, or the order's own customer or assigned driver |
 | `GET /api/orders/**`, `POST /api/orders/**` | `permitAll` at the URL layer | Authenticated, plus a role rule on each method |
-| `POST /api/orders/fulfillOrder` | Customers could fulfill orders | Staff and admin |
+| `POST /api/orders/fulfillOrder` | Customers could fulfill orders | Staff and admin (removed in Milestone 3: stock is reserved at order time and delivery completes the order) |
 | `POST /api/orders` | Trusted the browser's `cost`, `deliveryCost` and `status` | Computed on the server; always starts as `Placed` |
 | `POST /api/foods`, `updateFood`, `DELETE /api/foods/{id}` | No role check | Staff and admin |
 | `POST /api/inventory` | Customers could rewrite inventory | Staff and admin |

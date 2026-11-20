@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import FoodSeer.dto.InventoryDto;
 import FoodSeer.dto.OrderDto;
@@ -30,6 +31,7 @@ import FoodSeer.repositories.OrderRepository;
 import FoodSeer.service.InventoryService;
 import FoodSeer.service.OrderPricing;
 import FoodSeer.service.OrderService;
+import FoodSeer.service.StockService;
 import FoodSeer.service.UserService;
 
 /**
@@ -62,32 +64,38 @@ public class OrderServiceImpl implements OrderService {
     @Autowired
     private DriverStatsService driverStatsService;
 
+    /** Reserves stock when an order is placed. */
+    @Autowired
+    private StockService stockService;
+
     /**
-     * Creates an order for the signed-in customer. Only the order's name and
-     * the ids of its foods are taken from the request. Cost, delivery cost and
-     * status are set here, so a client can't choose its own price or skip
-     * ahead in the delivery flow.
+     * Creates an order for the signed-in customer and reserves its stock, all
+     * in one transaction: if any item is missing or short, nothing is
+     * reserved and nothing is saved (400). Only the order's name and the ids
+     * of its foods are taken from the request. Cost, delivery cost and status
+     * are set here, so a client can't choose its own price or skip ahead in
+     * the delivery flow.
      *
      * @param orderDto order to create
      * @return created order
      */
     @Override
+    @Transactional
     public OrderDto createOrder(final OrderDto orderDto) {
         if (orderDto == null || orderDto.getFoods() == null || orderDto.getFoods().isEmpty()) {
             throw new IllegalArgumentException("An order needs at least one item.");
         }
-
-        // Load actual Food entities from database (managed entities), so the
-        // prices come from the menu and not from the request.
-        final List<Food> foods = new ArrayList<>();
-        for (final Food food : orderDto.getFoods()) {
-            if (food == null || food.getId() == null) {
-                throw new IllegalArgumentException("Every item in an order needs a food id.");
-            }
-            final Food f = foodRepository.findById(food.getId())
-                    .orElseThrow(() -> new ResourceNotFoundException("A Food item does not exist within the order."));
-            foods.add(f);
+        final User currentUser = userService.getCurrentUser();
+        if (currentUser == null) {
+            throw new IllegalStateException("No authenticated user found");
         }
+
+        final List<Long> foodIds = new ArrayList<>();
+        for (final Food food : orderDto.getFoods()) {
+            foodIds.add(food == null ? null : food.getId());
+        }
+        // Validates every line, then decrements; prices come from the menu.
+        final List<Food> foods = stockService.reserve(foodIds);
 
         final BigDecimal itemsTotal = OrderPricing.itemsTotal(foods);
         final BigDecimal deliveryCost = OrderPricing.deliveryCost(itemsTotal);
@@ -102,11 +110,6 @@ public class OrderServiceImpl implements OrderService {
         // stamp the creation time so CalorieBudgetServiceImpl can later tell which orders were placed "today"
         order.setCreatedAt(java.time.LocalDateTime.now());
         
-        // Set the current user as the owner of this order
-        final User currentUser = userService.getCurrentUser();
-        if (currentUser == null) {
-            throw new IllegalStateException("No authenticated user found");
-        }
         order.setUser(currentUser);
         order.setAllergyRestrictions(currentUser.getDietaryRestrictions());
         
@@ -137,46 +140,6 @@ public class OrderServiceImpl implements OrderService {
     public List<OrderDto> getAllOrders() {
         final List<Order> orders = orderRepository.findAll();
         return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
-    }
-
-    /**
-     * Fulfills the order by checking food availability and updating inventory.
-     *
-     * @param orderId The id of the order to fulfill
-     * @return the updated OrderDto
-     */
-    @Override
-    public OrderDto fulfillOrder(final long orderId) {
-        final Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order does not exist with id " + orderId));
-
-        // Count how many of each food is in the order
-        final Map<Long, Long> foodCounts = order.getFoods().stream()
-                .collect(Collectors.groupingBy(Food::getId, Collectors.counting()));
-
-        // Check inventory and deduct quantities
-        for (final Map.Entry<Long, Long> entry : foodCounts.entrySet()) {
-            final Long foodId = entry.getKey();
-            final Long quantityNeeded = entry.getValue();
-            
-            final Food food = foodRepository.findById(foodId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Food not found with id " + foodId));
-            
-            // Check if enough stock
-            if (food.getAmount() < quantityNeeded) {
-                throw new IllegalArgumentException("Not enough stock to fulfill the order for " + food.getFoodName() 
-                        + ". Need: " + quantityNeeded + ", Available: " + food.getAmount());
-            }
-            
-            // Deduct from inventory
-            food.setAmount((int) (food.getAmount() - quantityNeeded));
-            foodRepository.save(food);
-        }
-
-        // Staff fulfillment only deducts stock now. "Fulfilled" means
-        // delivered, which only the driver's DELIVERED step sets.
-        final Order savedOrder = orderRepository.save(order);
-        return OrderMapper.mapToOrderDto(savedOrder);
     }
 
     /**

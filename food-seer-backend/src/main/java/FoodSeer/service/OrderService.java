@@ -37,14 +37,6 @@ public interface OrderService {
      */
     List<OrderDto> getAllOrders();
 
-    /**
-     * Marks an order as fulfilled.
-     *
-     * @param orderId
-     *            the ID of the order to fulfill
-     * @return the updated order as a DTO
-     */
-    OrderDto fulfillOrder(long orderId);
 
     /**
      * Retrieves all fulfilled orders.

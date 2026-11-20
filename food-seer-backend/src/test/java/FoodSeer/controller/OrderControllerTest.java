@@ -1,6 +1,7 @@
 package FoodSeer.controller;
 
 import FoodSeer.constant.OrderStatus;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -165,27 +166,21 @@ class OrderControllerTest {
                 .andExpect(status().isOk());
     }
 
+    // Milestone 3: staff "fulfill" is gone. Placing an order reserves its
+    // stock, and delivery is the one step that completes it.
     @Test
     @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder() throws Exception {
-        final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "Order2");
-        orderDto.setFoods(foods.subList(0, 1));
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testPlacingAnOrderReservesStock() throws Exception {
+        final Food food = foodRepository.findAll().get(0);
+        final int before = food.getAmount();
 
-        final OrderDto savedOrder = orderService.createOrder(orderDto);
-
-        mvc.perform(get("/api/orders"))
-                .andExpect(status().isOk());
-
-        mvc.perform(get("/api/orders/fulfilledOrders"))
-                .andExpect(status().isOk());
-
-        mvc.perform(post("/api/orders/fulfillOrder")
+        mvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(savedOrder))
-                        .accept(MediaType.APPLICATION_JSON))
+                        .content("{\"name\":\"Two\",\"foods\":[{\"id\":" + food.getId() + "},{\"id\":" + food.getId() + "}]}"))
                 .andExpect(status().isOk());
+
+        assertEquals(before - 2, foodRepository.findById(food.getId()).get().getAmount());
     }
 
     @Test
@@ -204,54 +199,31 @@ class OrderControllerTest {
 
     @Test
     @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder_OrderNotFound() throws Exception {
-        OrderDto fake = new OrderDto(999L, "FakeOrder");
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testOrderAboveStockIsRejectedAndReservesNothing() throws Exception {
+        final Food food = foodRepository.findAll().get(0);
+        final int before = food.getAmount();
+        final StringBuilder items = new StringBuilder();
+        for (int i = 0; i <= before; i++) {
+            items.append(i == 0 ? "" : ",").append("{\"id\":").append(food.getId()).append("}");
+        }
 
-        mvc.perform(post("/api/orders/fulfillOrder")
+        mvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(fake)))
-                .andExpect(status().isPreconditionFailed()); // 412
+                        .content("{\"name\":\"Too many\",\"foods\":[" + items + "]}"))
+                .andExpect(status().isBadRequest());
+
+        assertEquals(before, foodRepository.findById(food.getId()).get().getAmount());
     }
 
     @Test
     @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder_AlreadyFulfilled() throws Exception {
-        Food food = foodRepository.findAll().get(0);
-
-        OrderDto o = new OrderDto(0L, "FulfilledTest");
-        o.setFoods(List.of(food));
-        OrderDto saved = orderService.createOrder(o);
-
-        // Manually mark it fulfilled in DB first
-        var entity = orderRepository.findById(saved.getId()).get();
-        entity.setStatus(OrderStatus.DELIVERED);
-        orderRepository.save(entity);
-
-        mvc.perform(post("/api/orders/fulfillOrder")
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testEmptyOrderIsRejected() throws Exception {
+        mvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(saved)))
-                .andExpect(status().isGone()); // 410
-    }
-
-
-    @Test
-    @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder_BadRequest() throws Exception {
-        Food food = foodRepository.findAll().get(0);
-        food.setAmount(0); // no stock, will throw inside service
-        foodRepository.save(food);
-
-        OrderDto o = new OrderDto(0L, "FailOrder");
-        o.setFoods(List.of(food));
-        OrderDto saved = orderService.createOrder(o);
-
-        mvc.perform(post("/api/orders/fulfillOrder")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(saved)))
-                .andExpect(status().isBadRequest()); // 400
+                        .content("{\"name\":\"Nothing\",\"foods\":[]}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
