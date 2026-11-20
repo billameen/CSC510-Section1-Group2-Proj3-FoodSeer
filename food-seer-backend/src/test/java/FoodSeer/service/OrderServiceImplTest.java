@@ -1,6 +1,7 @@
 // java
 package FoodSeer.service;
 
+import FoodSeer.constant.OrderStatus;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -161,7 +162,7 @@ class OrderServiceImplTest {
         // Items 10 + 10 + 2 = 22.00; delivery 30% = 6.60; total 28.60.
         assertEquals(new BigDecimal("6.60"), saved.getValue().getDeliveryCost());
         assertEquals(new BigDecimal("28.60"), saved.getValue().getCost());
-        assertEquals("Placed", saved.getValue().getStatus());
+        assertEquals(OrderStatus.PLACED, saved.getValue().getStatus());
         assertFalse(saved.getValue().getIsFulfilled());
     }
 
@@ -210,7 +211,7 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void fulfillOrder_success_deductsStock_and_marksFulfilled() {
+    void fulfillOrder_success_deductsStock_butDoesNotMarkDelivered() {
         // Arrange - order with two identical food items (counts as 2)
         Food foo = new Food();
         foo.setId(10L);
@@ -243,7 +244,8 @@ class OrderServiceImplTest {
 
             OrderDto dto = orderService.fulfillOrder(50L);
 
-            assertTrue(dto.getIsFulfilled());
+            // Fulfilled now means delivered, which only the driver sets.
+            assertFalse(dto.getIsFulfilled());
             // amount deducted by 2 (ordered quantity)
             assertEquals(3, managed.getAmount());
             verify(foodRepository, times(1)).save(managed);
@@ -348,8 +350,7 @@ class OrderServiceImplTest {
     void updateOrder_delivered_bySameDriver_setsFulfilled_and_updatesEarnings() {
         Order order = new Order();
         order.setId(201L);
-        order.setStatus("Picked Up");
-        order.setIsFulfilled(false);
+        order.setStatus(OrderStatus.PICKED_UP);
         order.setDeliveryCost(BigDecimal.valueOf(15));
 
         DriverStats driver = new DriverStats();
@@ -377,12 +378,12 @@ class OrderServiceImplTest {
     @Test
     void getAvailableOrders_and_getActiveOrders_mapResults() {
         Order p1 = new Order(); p1.setId(300L);
-        when(orderRepository.findByStatus("Placed")).thenReturn(List.of(p1));
+        when(orderRepository.findByStatus(OrderStatus.PLACED)).thenReturn(List.of(p1));
 
         Order active = new Order(); active.setId(301L);
         when(orderRepository.findByDriverUsernameAndStatusIn(
             eq("drv"),
-            eq(List.of("Claimed", "Picked Up"))
+            eq(List.of(OrderStatus.CLAIMED, OrderStatus.PICKED_UP))
         )).thenReturn(List.of(active));
 
         try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {

@@ -1,5 +1,6 @@
 package FoodSeer.mapper;
 
+import FoodSeer.constant.OrderStatus;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.math.BigDecimal;
@@ -47,9 +48,8 @@ public class OrderMapperTest {
         // Create test Order
         order = new Order(1L, "Test Order");
         order.setFoods(foods);
-        order.setIsFulfilled(false);
         order.setCost(new BigDecimal("25.00"));
-        order.setStatus("Placed");
+        order.setStatus(OrderStatus.PLACED);
         order.setDeliveryCost(new BigDecimal("5.00"));
         order.setRating(new BigDecimal("4.8"));
         order.setRatedFoodIds(ratedFoodIds);
@@ -59,7 +59,6 @@ public class OrderMapperTest {
     @Test
     public void testMapToOrder_Complete() {
         orderDto = new OrderDto(1L, "DTO Order");
-        orderDto.setIsFulfilled(true);
         orderDto.setDeliveryCost(new BigDecimal("4.50"));
         orderDto.setFoods(foods);
 
@@ -72,7 +71,8 @@ public class OrderMapperTest {
         assertNotNull(mappedOrder);
         assertEquals(orderDto.getId(), mappedOrder.getId());
         assertEquals(orderDto.getName(), mappedOrder.getName());
-        assertEquals(orderDto.getIsFulfilled(), mappedOrder.getIsFulfilled());
+        // isFulfilled isn't copied any more: it's derived from the status.
+        assertFalse(mappedOrder.getIsFulfilled());
         assertEquals(orderDto.getDeliveryCost(), mappedOrder.getDeliveryCost());
         assertEquals(driverStats, mappedOrder.getDriver());
 

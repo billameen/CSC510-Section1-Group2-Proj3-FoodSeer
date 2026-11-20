@@ -1,5 +1,6 @@
 package FoodSeer.controller;
 
+import FoodSeer.constant.OrderStatus;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -280,8 +281,7 @@ class AuthorizationMatrixTest {
         final Order order = new Order(1L, "Lunch");
         order.setUser(owner);
         order.setDriver(assigned);
-        order.setStatus("Delivered");
-        order.setIsFulfilled(true);
+        order.setStatus(OrderStatus.DELIVERED);
         when(orders.findById(1L)).thenReturn(Optional.of(order));
 
         // Happy-path stubs so an allowed call returns 2xx.

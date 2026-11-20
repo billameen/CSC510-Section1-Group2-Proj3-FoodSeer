@@ -1,5 +1,6 @@
 package FoodSeer.repositories;
 
+import FoodSeer.constant.OrderStatus;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -44,9 +45,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT o FROM Order o JOIN o.foods f WHERE f = :food")
     List<Order> findOrdersContainingFood(@Param("food") Food food);
 
-    List<Order> findByStatus(String status);
+    List<Order> findByStatus(OrderStatus status);
 
-    List<Order> findByDriverUsernameAndStatus(@Param("username") String username, @Param("status") String status);
+    List<Order> findByDriverUsernameAndStatus(@Param("username") String username, @Param("status") OrderStatus status);
 
-    List<Order> findByDriverUsernameAndStatusIn(String username, List<String> statuses);
+    List<Order> findByDriverUsernameAndStatusIn(String username, List<OrderStatus> statuses);
 }

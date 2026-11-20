@@ -1,5 +1,6 @@
 package FoodSeer.service.impl;
 
+import FoodSeer.constant.OrderStatus;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
@@ -95,10 +96,9 @@ public class OrderServiceImpl implements OrderService {
         final Order order = new Order();
         order.setName(orderDto.getName());
         order.setFoods(foods);
-        order.setIsFulfilled(false);
         order.setCost(itemsTotal.add(deliveryCost));
         order.setDeliveryCost(deliveryCost);
-        order.setStatus("Placed");
+        order.setStatus(OrderStatus.PLACED);
         // stamp the creation time so CalorieBudgetServiceImpl can later tell which orders were placed "today"
         order.setCreatedAt(java.time.LocalDateTime.now());
         
@@ -173,7 +173,8 @@ public class OrderServiceImpl implements OrderService {
             foodRepository.save(food);
         }
 
-        order.setIsFulfilled(true);
+        // Staff fulfillment only deducts stock now. "Fulfilled" means
+        // delivered, which only the driver's DELIVERED step sets.
         final Order savedOrder = orderRepository.save(order);
         return OrderMapper.mapToOrderDto(savedOrder);
     }
@@ -297,7 +298,7 @@ public class OrderServiceImpl implements OrderService {
                     new ResourceNotFoundException(
                             "Order does not exist with id " + orderId));
 
-        if (!"Placed".equals(order.getStatus())
+        if (order.getStatus() != OrderStatus.PLACED
                 || order.getDriver() != null) {
             throw new IllegalStateException(
                 "Order is not available to claim");
@@ -308,7 +309,7 @@ public class OrderServiceImpl implements OrderService {
                     driverStatsService.getDriverStats(
                             currentUser.getUsername())));
 
-        order.setStatus("Claimed");
+        order.setStatus(OrderStatus.CLAIMED);
 
         return OrderMapper.mapToOrderDto(orderRepository.save(order));
     }
@@ -335,7 +336,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         if ("Picked Up".equals(status)) {
-            if (!"Claimed".equals(order.getStatus())) {
+            if (order.getStatus() != OrderStatus.CLAIMED) {
                 throw new IllegalStateException("Order must be claimed before pickup");
             }
 
@@ -355,16 +356,15 @@ public class OrderServiceImpl implements OrderService {
                     }
                 }
 
-                order.setStatus("Picked Up");
+                order.setStatus(OrderStatus.PICKED_UP);
 
             } else if ("Delivered".equals(status)) {
-                if (!"Picked Up".equals(order.getStatus())) {
+                if (order.getStatus() != OrderStatus.PICKED_UP) {
                     throw new IllegalStateException(
                         "Order must be picked up before delivery");
                 }
 
-                order.setStatus("Delivered");
-                order.setIsFulfilled(true);
+                order.setStatus(OrderStatus.DELIVERED);
 
                 driverStatsService.updateTotalEarnings(
                     authenticatedUsername, order.getDeliveryCost());
@@ -379,7 +379,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     public List<OrderDto> getAvailableOrders(){
-        List<Order> availableOrders = orderRepository.findByStatus("Placed");
+        List<Order> availableOrders = orderRepository.findByStatus(OrderStatus.PLACED);
         return availableOrders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
     }
 
@@ -388,7 +388,7 @@ public class OrderServiceImpl implements OrderService {
         List<Order> activeOrders =
             orderRepository.findByDriverUsernameAndStatusIn(
                 username,
-                List.of("Claimed", "Picked Up")
+                List.of(OrderStatus.CLAIMED, OrderStatus.PICKED_UP)
             );
 
         return activeOrders.stream()

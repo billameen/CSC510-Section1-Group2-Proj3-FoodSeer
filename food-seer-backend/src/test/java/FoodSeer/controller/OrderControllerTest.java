@@ -1,5 +1,6 @@
 package FoodSeer.controller;
 
+import FoodSeer.constant.OrderStatus;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -225,7 +226,7 @@ class OrderControllerTest {
 
         // Manually mark it fulfilled in DB first
         var entity = orderRepository.findById(saved.getId()).get();
-        entity.setIsFulfilled(true);
+        entity.setStatus(OrderStatus.DELIVERED);
         orderRepository.save(entity);
 
         mvc.perform(post("/api/orders/fulfillOrder")
@@ -324,7 +325,7 @@ class OrderControllerTest {
 
         // Mark fulfilled
         var entity = orderRepository.findById(savedOrder.getId()).get();
-        entity.setIsFulfilled(true);
+        entity.setStatus(OrderStatus.DELIVERED);
         orderRepository.save(entity);
 
         mvc.perform(get("/api/orders/my/fulfilled"))

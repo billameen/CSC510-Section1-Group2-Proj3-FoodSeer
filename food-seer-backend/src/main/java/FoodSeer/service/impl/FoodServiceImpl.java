@@ -1,5 +1,6 @@
 package FoodSeer.service.impl;
 
+import FoodSeer.constant.OrderStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -326,7 +327,7 @@ public class FoodServiceImpl implements FoodService {
 
         // 3. GATEKEEPER: Has the driver delivered it? (Staff marking an order
         // fulfilled only means it's ready; the customer hasn't eaten it yet.)
-        if (!"Delivered".equals(order.getStatus())) {
+        if (order.getStatus() != OrderStatus.DELIVERED) {
             throw new IllegalStateException("You can only rate food from an order that has been delivered.");
         }
 

@@ -1,5 +1,6 @@
 package FoodSeer.mapper;
 
+import FoodSeer.constant.OrderStatus;
 import java.util.stream.Collectors;
 import java.util.ArrayList; // Added simple list handling
 
@@ -59,7 +60,7 @@ public class OrderMapper {
         // -----------------------
 
         dto.setCost(order.getCost());
-        dto.setStatus(order.getStatus());
+        dto.setStatus(order.getStatus() == null ? null : order.getStatus().label());
         dto.setDeliveryCost(order.getDeliveryCost());
 
         dto.setAllergyRestrictions(order.getAllergyRestrictions());
@@ -87,7 +88,6 @@ public class OrderMapper {
                         food.getAllergies()))
                 .collect(Collectors.toList()));
 
-        order.setIsFulfilled(orderDto.getIsFulfilled());
 
         order.setDriver(orderDto.getDriverStats());
         order.setDeliveryCost(orderDto.getDeliveryCost());

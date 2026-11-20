@@ -7,11 +7,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import FoodSeer.constant.OrderStatus;
+import FoodSeer.constant.OrderStatusConverter;
 import jakarta.persistence.*;
 
 /**
  * Represents an Order in the FoodSeer system.
- * Each order can contain multiple foods, and can be marked as fulfilled or not.
+ * Each order can contain multiple foods. Where it is in its life is one
+ * OrderStatus; "fulfilled" just means DELIVERED and is derived from it.
  */
 @Entity
 @Table(name = "orders")
@@ -35,11 +38,26 @@ public class Order {
     private List<Food> foods = new ArrayList<>();
 
     /** Boolean used to track if the order has been fulfilled */
+    /**
+     * Kept as a column because existing databases have it as NOT NULL, but it
+     * is no longer set independently: it always equals status == DELIVERED.
+     */
     private boolean isFulfilled;
 
     private BigDecimal cost;
 
-    private String status;
+    @Convert(converter = OrderStatusConverter.class)
+    private OrderStatus status;
+
+    /**
+     * Optimistic lock. Two drivers claiming the same order both read version
+     * N; the second save fails instead of silently overwriting the first.
+     */
+    @Version
+    // Null until first saved, so Spring Data treats a new order as new. Rows that
+    // existed before this column get 0 from the column default.
+    @Column(nullable = false, columnDefinition = "BIGINT DEFAULT 0")
+    private Long version;
 
     private BigDecimal rating;
 
@@ -105,6 +123,7 @@ public class Order {
         this.id = id;
         this.name = name;
         this.foods = new ArrayList<>();
+        this.status = OrderStatus.PLACED;
         this.isFulfilled = false;
         this.ratedFoodIds = new HashSet<>();
     }
@@ -174,21 +193,10 @@ public class Order {
     }
 
     /**
-     * Checks if the order is fulfilled.
-     *
-     * @return true if fulfilled, false otherwise
+     * @return true if the order was delivered (derived from the status)
      */
     public boolean getIsFulfilled() {
-        return isFulfilled;
-    }
-
-    /**
-     * Sets whether the order is fulfilled.
-     *
-     * @param isFulfilled true if fulfilled, false otherwise
-     */
-    public void setIsFulfilled(final boolean isFulfilled) {
-        this.isFulfilled = isFulfilled;
+        return status == OrderStatus.DELIVERED;
     }
 
     /**
@@ -248,12 +256,27 @@ public class Order {
         return this.ratedFoodIds.contains(foodId);
     }
 
-    public String getStatus() {
+    public OrderStatus getStatus() {
         return status;
     }
 
-    public void setStatus(String status) {
+    /**
+     * Sets the status directly. Only OrderStateMachine (and tests or
+     * simulations building orders) should call this; everything else moves an
+     * order with OrderStateMachine.transition so the rules are checked.
+     *
+     * @param status the new status
+     */
+    public void setStatus(final OrderStatus status) {
         this.status = status;
+        this.isFulfilled = status == OrderStatus.DELIVERED;
+    }
+
+    /**
+     * @return the optimistic-lock version
+     */
+    public Long getVersion() {
+        return version;
     }
 
     public BigDecimal getRating() {
@@ -306,6 +329,20 @@ public class Order {
     protected void onCreate() {
         if (this.createdAt == null) {
             this.createdAt = LocalDateTime.now();
+        }
+        if (this.status == null) {
+            setStatus(OrderStatus.PLACED);
+        }
+    }
+
+    /**
+     * Rows saved before the status column was always filled have no status.
+     * Treat them by their old fulfilled flag.
+     */
+    @PostLoad
+    protected void onLoad() {
+        if (this.status == null) {
+            this.status = this.isFulfilled ? OrderStatus.DELIVERED : OrderStatus.PLACED;
         }
     }
 }
