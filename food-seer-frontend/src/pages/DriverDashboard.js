@@ -9,6 +9,7 @@ import {
   acknowledgeAllergyHandoff,
   getAllergyHandoffStatus
 } from "../services/api";
+import { ORDER_STATUS } from "../data/orderStatus";
 
 const DriverDashboard = () => {
   const [stats, setStats] = useState(null);
@@ -74,7 +75,10 @@ setAllergyStatus(Object.fromEntries(statusEntries));
     window.location.reload();
   } catch (err) {
     console.error(err);
-    setError(err.message || "Failed to claim order.");
+    // A 409 here usually means another driver claimed it first, so show why
+    // and reload the lists rather than replacing the whole dashboard.
+    alert(err.message || "Failed to claim order.");
+    window.location.reload();
   }
 };
 
@@ -92,7 +96,7 @@ const handleAcknowledge = async (orderId) => {
     try {
       const user = await getCurrentUser();
 
-      await updateOrderStatus(orderId, "Picked Up", user.username);
+      await updateOrderStatus(orderId, ORDER_STATUS.PICKED_UP, user.username);
 
       // 🔁 Force refresh (as requested)
       window.location.reload();
@@ -107,14 +111,14 @@ const handleAcknowledge = async (orderId) => {
     try {
       const user = await getCurrentUser();
 
-      await updateOrderStatus(orderId, "Delivered", user.username);
+      await updateOrderStatus(orderId, ORDER_STATUS.DELIVERED, user.username);
 
       // 🔁 Force refresh (as requested)
       window.location.reload();
 
     } catch (err) {
       console.error(err);
-      setError("Failed to deliver order.");
+      alert(err.message || "Failed to deliver order.");
     }
   };
 
@@ -163,7 +167,7 @@ const handleAcknowledge = async (orderId) => {
                         <div className="order-header">
                           <h3>Order #{order.id}</h3>
                           <span className="status-badge active">
-                            {order.status === "Claimed" ? "CLAIMED" : "PICKED UP"}
+                            {order.status === ORDER_STATUS.CLAIMED ? "CLAIMED" : "PICKED UP"}
                           </span>
                         </div>
 
@@ -174,7 +178,7 @@ const handleAcknowledge = async (orderId) => {
                           </div>
                         </div>
 
-                        {order.status === "Claimed" ? (
+                        {order.status === ORDER_STATUS.CLAIMED ? (
                           <div>
                             {order.allergyRestrictions?.trim() ? (
                               <>
