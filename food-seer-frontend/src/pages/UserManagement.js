@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getAllUsers, updateUserRole, deleteUser, getCurrentUser } from '../services/api';
+import { getAllUsers, updateUserRole, deleteUser, getCurrentUser, createUser } from '../services/api';
 
 const UserManagement = () => {
   const [users, setUsers] = useState([]);
@@ -8,6 +8,9 @@ const UserManagement = () => {
   const [editingUser, setEditingUser] = useState(null);
   const [newRole, setNewRole] = useState('');
   const [currentUserId, setCurrentUserId] = useState(null);
+  const emptyAccount = { username: '', email: '', password: '', role: 'staff' };
+  const [newAccount, setNewAccount] = useState(emptyAccount);
+  const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
 
   const fetchUsers = async () => {
@@ -59,7 +62,7 @@ const UserManagement = () => {
       await fetchUsers();
     } catch (error) {
       console.error('Error updating user role:', error);
-      alert('Failed to update user role. Please try again.');
+      alert(`Could not update the role: ${error.message}`);
     }
   };
 
@@ -79,7 +82,22 @@ const UserManagement = () => {
       await fetchUsers();
     } catch (error) {
       console.error('Error deleting user:', error);
-      alert('Failed to delete user. Please try again.');
+      alert(`Could not delete the user: ${error.message}`);
+    }
+  };
+
+  const handleCreateAccount = async (e) => {
+    e.preventDefault();
+    setCreating(true);
+    try {
+      await createUser(newAccount.username, newAccount.email, newAccount.password, newAccount.role);
+      alert(`Created ${newAccount.role} account ${newAccount.username}.`);
+      setNewAccount(emptyAccount);
+      await fetchUsers();
+    } catch (error) {
+      alert(`Could not create the account: ${error.message}`);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -164,6 +182,7 @@ const UserManagement = () => {
                 className="role-select"
               >
                 <option value="ROLE_CUSTOMER">Customer</option>
+                <option value="ROLE_DRIVER">Driver</option>
                 <option value="ROLE_STAFF">Staff</option>
                 <option value="ROLE_ADMIN">Admin</option>
               </select>
@@ -185,6 +204,50 @@ const UserManagement = () => {
           </div>
         </div>
       )}
+
+      <div className="users-table-container">
+        <h2>Create an account</h2>
+        <p>Staff and admin accounts can only be created here; the public sign-up form is for customers and drivers.</p>
+        <form className="create-account-form" onSubmit={handleCreateAccount}>
+          <input
+            className="form-input"
+            placeholder="Username"
+            value={newAccount.username}
+            onChange={(e) => setNewAccount({ ...newAccount, username: e.target.value })}
+            required
+          />
+          <input
+            className="form-input"
+            type="email"
+            placeholder="Email"
+            value={newAccount.email}
+            onChange={(e) => setNewAccount({ ...newAccount, email: e.target.value })}
+            required
+          />
+          <input
+            className="form-input"
+            type="password"
+            placeholder="Password (8+ characters)"
+            value={newAccount.password}
+            onChange={(e) => setNewAccount({ ...newAccount, password: e.target.value })}
+            required
+          />
+          <select
+            className="role-select"
+            aria-label="Role"
+            value={newAccount.role}
+            onChange={(e) => setNewAccount({ ...newAccount, role: e.target.value })}
+          >
+            <option value="staff">Staff</option>
+            <option value="admin">Admin</option>
+            <option value="driver">Driver</option>
+            <option value="customer">Customer</option>
+          </select>
+          <button type="submit" className="submit-button" disabled={creating}>
+            {creating ? 'Creating...' : 'Create account'}
+          </button>
+        </form>
+      </div>
 
       <div className="users-table-container">
         <h2>All Users</h2>

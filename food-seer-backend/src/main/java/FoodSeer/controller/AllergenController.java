@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,8 +17,7 @@ import FoodSeer.service.AllergenService;
 
 /**
  * Exposes the shared, site-wide allergen list - seeded with the original
- * fixed set, and extended whenever a customer adds a custom allergy that
- * isn't already known.
+ * fixed set, and extended by staff and admin.
  */
 @CrossOrigin("*")
 @RestController
@@ -27,11 +27,22 @@ public class AllergenController {
     @Autowired
     private AllergenService allergenService;
 
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'DRIVER', 'STAFF', 'ADMIN')")
     @GetMapping
     public List<String> getAllergens() {
         return allergenService.getAllAllergenNames();
     }
 
+    /**
+     * Adds a name to the shared allergen list that staff tag dishes with.
+     * Staff and admin only; a customer's own custom allergy is saved on their
+     * profile through /api/users/me/preferences.
+     *
+     * @param req
+     *            body with "name"
+     * @return the updated list, or 400 for a blank name
+     */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @PostMapping
     public ResponseEntity<?> addAllergen(@RequestBody final Map<String, String> req) {
         try {

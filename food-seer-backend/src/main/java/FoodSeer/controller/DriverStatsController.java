@@ -1,7 +1,5 @@
 package FoodSeer.controller;
 
-import FoodSeer.dto.DriverStatsDto;
-import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.service.DriverStatsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -18,13 +16,10 @@ public class DriverStatsController {
     DriverStatsService driverStatsService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN') or (hasRole('DRIVER') and @driverStatsAccess.isOwner(authentication, #username))")
+    @PreAuthorize("hasRole('ADMIN') or (hasRole('DRIVER') and authentication.name == #username)")
     public ResponseEntity<?> getDriverStats(@P("username") @RequestParam("username") String username) {
 
-        DriverStatsDto driverStatsDto = driverStatsService.getDriverStats(username);
-        if (driverStatsDto == null) {
-            throw new ResourceNotFoundException("Driver statistics not found");
-        }
-        return ResponseEntity.ok().body(driverStatsDto);
+        // An unknown driver is a 404 from the service.
+        return ResponseEntity.ok().body(driverStatsService.getDriverStats(username));
     }
 }

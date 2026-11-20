@@ -124,7 +124,7 @@ def test_unauthenticated_request_rejected_from_role_restricted_order_endpoint():
     An API request made without a valid token against a role-restricted
     resource (a customer's own orders) is rejected rather than served.
     """
-    status, body = api_request("GET", "/api/orders/my-orders")
+    status, body = api_request("GET", "/api/orders/my")
     assert status in {401, 403}, body
 
 
@@ -159,7 +159,7 @@ def test_driver_stats_endpoint_allows_unauthenticated_access():
 
     A driver's dashboard statistics should be a restricted resource that
     rejects requests without a valid token, the same way /api/users and
-    /api/orders/my-orders do.
+    /api/orders/my do.
 
     KNOWN DEFECT: DriverStatsController.getDriverStats has no @PreAuthorize
     annotation, and SpringSecurityConfig explicitly permitAll()s GET

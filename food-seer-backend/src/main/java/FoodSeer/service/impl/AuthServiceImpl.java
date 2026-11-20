@@ -2,7 +2,7 @@ package FoodSeer.service.impl;
 
 import java.util.Map;
 
-import FoodSeer.constant.Roles;
+import FoodSeer.constant.UserRole;
 import FoodSeer.entity.DriverStats;
 import FoodSeer.repositories.DriverStatsRepository;
 import org.slf4j.Logger;
@@ -46,53 +46,98 @@ public class AuthServiceImpl implements AuthService {
     private AuthenticationManager authManager;
     private JwtTokenProvider      jwtService;
 
+    /** Letters, digits, underscore and hyphen; 3 to 50 characters. */
+    private static final String USERNAME_PATTERN = "^[A-Za-z0-9_-]{3,50}$";
+
+    /** A plain address: local part, @, domain with a dot. */
+    private static final String EMAIL_PATTERN = "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$";
+
+    /**
+     * Public sign-up. Only customers and drivers can register themselves;
+     * staff and admin accounts are created by an admin through
+     * {@link #createAccount(RegisterRequestDto)}.
+     */
     @Override
     public ResponseEntity<Map<String, String>> register ( final RegisterRequestDto req ) {
-        // Username checks
-        if ( userRepository.existsByUsername( req.username() ) ) {
-            logger.error("Username already taken: " + req.username());
-            return ResponseEntity.badRequest().body( Map.of( "error", "Username already taken" ) );
+        final UserRole role;
+        try {
+            role = UserRole.parse( req == null ? null : req.role() );
         }
-        if ( req.username().length() > 50 || req.username().length() < 3 ){
-            logger.error("Username must be between 3-50 characters");
-            return ResponseEntity.badRequest().body( Map.of( "error", "Username must be between 3-50 characters" ) );
+        catch ( final IllegalArgumentException e ) {
+            return badRequest( e.getMessage() );
         }
-        for(Character c : req.username().toCharArray()){
-            if(!Character.isAlphabetic(c) && c != '_' && c != '-'){
-                logger.error("Username must only contain letters, -, and _");
-                return ResponseEntity.badRequest().body( Map.of( "error", "Username must only contain letters, -, and _" ) );
-            }
+        if ( !role.isSelfRegistrable() ) {
+            return badRequest( "Staff and admin accounts are created by an administrator." );
         }
-        
-        // Password checks
-        if ( req.password().length() < 8 || req.password().length() > 128){
-            logger.error("Password must be longer than 8 characters");
-            return ResponseEntity.badRequest().body( Map.of( "error", "Password must be longer than 8 characters" ) );
+        return save( req, role );
+    }
+
+    /**
+     * Admin-only account creation. Any of the four roles is allowed.
+     */
+    @Override
+    public ResponseEntity<Map<String, String>> createAccount ( final RegisterRequestDto req ) {
+        final UserRole role;
+        try {
+            role = UserRole.parse( req == null ? null : req.role() );
+        }
+        catch ( final IllegalArgumentException e ) {
+            return badRequest( e.getMessage() );
+        }
+        return save( req, role );
+    }
+
+    /**
+     * Validates the request and saves the account with the given role.
+     */
+    private ResponseEntity<Map<String, String>> save ( final RegisterRequestDto req, final UserRole role ) {
+        final String problem = validate( req );
+        if ( problem != null ) {
+            return badRequest( problem );
         }
 
-        // Email checks
-        if ( req.email().length() > 254 ||  !req.email().matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$")){
-            logger.error("Username must be between 3-50 characters");
-            return ResponseEntity.badRequest().body( Map.of( "error", "Username must be between 3-50 characters" ) );
-        }
-        
-        final String role = setCorrectRoles(req);
         final String hash = passwordEncoder.encode( req.password() );
-        final User hashedUser = new User( req, hash, role );
-        userRepository.save( hashedUser );
-        if(role.equals("ROLE_DRIVER")){
-            logger.info("New driver registered: " + req.username());
-            DriverStats driverStats = new DriverStats();
-            driverStats.setUsername(req.username());
-            driverStatsRepository.save(driverStats);
+        final User user = new User( req, hash, role.authority() );
+        userRepository.save( user );
+        if ( role == UserRole.DRIVER ) {
+            final DriverStats driverStats = new DriverStats();
+            driverStats.setUsername( req.username() );
+            driverStatsRepository.save( driverStats );
         }
-        if(role.equals("ROLE_CUSTOMER")){
+        if ( role == UserRole.CUSTOMER ) {
             // so every new customer has fitness data from day one, instead of needing
             // scripts/generate_fitness_data.py run by hand per account
-            fitnessDataService.generateFitnessDataIfMissing(req.username());
+            fitnessDataService.generateFitnessDataIfMissing( req.username() );
         }
-        logger.info("User registered successfully: " + req.username());
+        logger.info( "Registered {} as {}", req.username(), role );
         return ResponseEntity.ok( Map.of( "message", "Registered" ) );
+    }
+
+    /**
+     * @return the first problem with the request, or null if it is valid
+     */
+    private String validate ( final RegisterRequestDto req ) {
+        if ( req.username() == null || !req.username().matches( USERNAME_PATTERN ) ) {
+            return "Username must be 3-50 characters: letters, digits, - and _ only";
+        }
+        if ( userRepository.existsByUsername( req.username() ) ) {
+            return "Username already taken";
+        }
+        if ( req.password() == null || req.password().length() < 8 || req.password().length() > 128 ) {
+            return "Password must be 8-128 characters";
+        }
+        if ( req.email() == null || req.email().length() > 254 || !req.email().matches( EMAIL_PATTERN ) ) {
+            return "Please enter a valid email address";
+        }
+        if ( Boolean.TRUE.equals( userRepository.existsByEmail( req.email() ) ) ) {
+            return "Email already in use";
+        }
+        return null;
+    }
+
+    private static ResponseEntity<Map<String, String>> badRequest ( final String message ) {
+        logger.info( "Registration rejected: {}", message );
+        return ResponseEntity.badRequest().body( Map.of( "error", message ) );
     }
 
     @Override
@@ -105,16 +150,4 @@ public class AuthServiceImpl implements AuthService {
         return ResponseEntity.ok( new AuthResponseDto( token ) );
     }
 
-    private String setCorrectRoles(final RegisterRequestDto req){
-        if(req.role().toLowerCase().equals("driver")){
-            return Roles.ROLE_DRIVER;
-        }
-        else if(req.role().toLowerCase().equals("customer")){
-            return Roles.ROLE_CUSTOMER;
-        }
-        else if(req.role().toLowerCase().equals("staff")){
-            return Roles.ROLE_STAFF;
-        }
-        return "";
-    }
 }

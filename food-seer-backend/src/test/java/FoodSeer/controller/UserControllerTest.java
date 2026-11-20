@@ -143,7 +143,7 @@ class UserControllerTest {
     }
 
     @Test
-    @WithMockUser(username = "testuser")
+    @WithMockUser(username = "testuser", roles = "CUSTOMER")
     void shouldUpdateUserPreferences() throws Exception {
         UserPreferencesDto prefs = new UserPreferencesDto("LOW", "VEGAN", null);
 
@@ -167,7 +167,7 @@ class UserControllerTest {
     }
 
     @Test
-    @WithMockUser(username = "testuser")
+    @WithMockUser(username = "testuser", roles = "CUSTOMER")
     void shouldReturnCurrentUser() throws Exception {
         mockMvc.perform(get("/api/users/me")
                         .contentType(MediaType.APPLICATION_JSON))
@@ -182,7 +182,7 @@ class UserControllerTest {
     }
 
     @Test
-    @WithMockUser(username = "ghostuser")
+    @WithMockUser(username = "ghostuser", roles = "CUSTOMER")
     void shouldReturn404WhenUpdatingPreferencesForMissingUser() throws Exception {
         UserPreferencesDto prefs = new UserPreferencesDto("LOW", "VEGAN", null);
 
@@ -200,7 +200,7 @@ class UserControllerTest {
      * so it must stay absent rather than fabricating a number.
      */
     @Test
-    @WithMockUser(username = "testuser")
+    @WithMockUser(username = "testuser", roles = "CUSTOMER")
     void shouldReturnCalorieBudget_hasFitnessDataButNoGoalYet() throws Exception {
         // registration auto-generates testuser's fitness-data file, but never sets a goal
         mockMvc.perform(get("/api/users/me/calorieBudget")
@@ -225,7 +225,7 @@ class UserControllerTest {
      * and the per-meal breakdown.
      */
     @Test
-    @WithMockUser(username = "testuser")
+    @WithMockUser(username = "testuser", roles = "CUSTOMER")
     void shouldLogMeal_andReflectItInTheBudget() throws Exception {
         mockMvc.perform(post("/api/users/me/mealLog")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -238,7 +238,7 @@ class UserControllerTest {
 
     /** An unrecognized meal type (e.g. "BRUNCH") must be rejected with 400, not silently accepted. */
     @Test
-    @WithMockUser(username = "testuser")
+    @WithMockUser(username = "testuser", roles = "CUSTOMER")
     void shouldRejectLogMealWithInvalidMealType() throws Exception {
         mockMvc.perform(post("/api/users/me/mealLog")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -248,7 +248,7 @@ class UserControllerTest {
 
     /** A request missing the required calories field must be rejected with 400. */
     @Test
-    @WithMockUser(username = "testuser")
+    @WithMockUser(username = "testuser", roles = "CUSTOMER")
     void shouldRejectLogMealWithMissingCalories() throws Exception {
         mockMvc.perform(post("/api/users/me/mealLog")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -258,7 +258,7 @@ class UserControllerTest {
 
     /** A negative calorie count must be rejected with 400. */
     @Test
-    @WithMockUser(username = "testuser")
+    @WithMockUser(username = "testuser", roles = "CUSTOMER")
     void shouldRejectLogMealWithNegativeCalories() throws Exception {
         mockMvc.perform(post("/api/users/me/mealLog")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -54,9 +54,15 @@ class OrderServiceImplTest {
 
     @Test
     void createOrder_whenNoAuthenticatedUser_throws() {
-        // Arrange
-        OrderDto dto = mock(OrderDto.class);
-        when(dto.getFoods()).thenReturn(new ArrayList<>());
+        // Arrange (an empty order is now rejected before the user check, so use one item)
+        Food item = new Food();
+        item.setId(5L);
+        OrderDto dto = new OrderDto(null, "Lunch");
+        dto.setFoods(List.of(item));
+        Food managed = new Food();
+        managed.setId(5L);
+        managed.setPrice(3);
+        when(foodRepository.findById(5L)).thenReturn(Optional.of(managed));
         when(userService.getCurrentUser()).thenReturn(null);
 
         // Act / Assert
@@ -105,6 +111,58 @@ class OrderServiceImplTest {
             assertEquals("MyOrder", result.getName());
             verify(orderRepository, times(1)).save(any(Order.class));
         }
+    }
+
+    @Test
+    void createOrder_rejectsAnEmptyOrder() {
+        OrderDto dto = new OrderDto(null, "Nothing");
+
+        assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(dto));
+        verify(orderRepository, never()).save(any(Order.class));
+    }
+
+    /**
+     * The browser used to send cost, deliveryCost and status, and the server
+     * stored them. They are now ignored and computed from the menu.
+     */
+    @Test
+    void createOrder_ignoresClientPriceAndStatus() {
+        Food burger = new Food();
+        burger.setId(1L);
+        burger.setFoodName("BURGER");
+        burger.setPrice(10);
+        Food tea = new Food();
+        tea.setId(2L);
+        tea.setFoodName("TEA");
+        tea.setPrice(2);
+        when(foodRepository.findById(1L)).thenReturn(Optional.of(burger));
+        when(foodRepository.findById(2L)).thenReturn(Optional.of(tea));
+        User currentUser = new User();
+        currentUser.setUsername("customer");
+        when(userService.getCurrentUser()).thenReturn(currentUser);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        // Two burgers and a tea, with a forged price, delivery fee and status.
+        Food b = new Food();
+        b.setId(1L);
+        b.setPrice(0);
+        Food t = new Food();
+        t.setId(2L);
+        OrderDto request = new OrderDto(null, "Cheap lunch");
+        request.setFoods(List.of(b, b, t));
+        request.setCost(new BigDecimal("0.01"));
+        request.setDeliveryCost(BigDecimal.ZERO);
+        request.setStatus("Delivered");
+
+        orderService.createOrder(request);
+
+        ArgumentCaptor<Order> saved = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(saved.capture());
+        // Items 10 + 10 + 2 = 22.00; delivery 30% = 6.60; total 28.60.
+        assertEquals(new BigDecimal("6.60"), saved.getValue().getDeliveryCost());
+        assertEquals(new BigDecimal("28.60"), saved.getValue().getCost());
+        assertEquals("Placed", saved.getValue().getStatus());
+        assertFalse(saved.getValue().getIsFulfilled());
     }
 
     @Test

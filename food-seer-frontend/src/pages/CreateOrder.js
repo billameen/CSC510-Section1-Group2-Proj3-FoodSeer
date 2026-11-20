@@ -122,16 +122,17 @@ const CreateOrder = () => {
 
   const clearCart = () => { setCart({}); };
 
-  const getDeliveryCost = () => {
-    const itemsTotal = Object.values(cart).reduce((total, item) => total + (item.food.price * item.quantity), 0);
-    return parseFloat((0.3 * itemsTotal).toFixed(2));
-  }
+  // Estimates only, so the cart can show a running total. The server prices
+  // the order itself from the menu (items + 30% delivery) and that is the
+  // amount charged; the confirmation shows its figure.
+  const getEstimatedItemsTotal = () =>
+    Object.values(cart).reduce((total, item) => total + (item.food.price * item.quantity), 0);
 
-  const getTotalPrice = () => {
-    const itemsTotal = Object.values(cart).reduce((total, item) => total + (item.food.price * item.quantity), 0);
-    const delivery = getDeliveryCost();
-    return parseFloat((itemsTotal + delivery).toFixed(2));
-  };
+  const getEstimatedDeliveryCost = () => parseFloat((0.3 * getEstimatedItemsTotal()).toFixed(2));
+
+  const getEstimatedTotal = () => parseFloat((getEstimatedItemsTotal() + getEstimatedDeliveryCost()).toFixed(2));
+
+  const formatMoney = (value) => Number(value).toFixed(2);
 
   const getTotalItems = () => {
     return Object.values(cart).reduce((total, item) => total + item.quantity, 0);
@@ -152,14 +153,16 @@ const CreateOrder = () => {
       const orderFoods = Object.values(cart).flatMap(item => 
         Array(item.quantity).fill({ id: item.food.id })
       );
-      const orderData = { name: orderName, foods: orderFoods, isFulfilled: false, cost: getTotalPrice(), status: 'Placed', deliveryCost: getDeliveryCost() };
-      console.log('Submitting order data:', orderData);
-      await createOrder(orderData);
-      alert('Order placed successfully!');
+      // Only the name and the items. Cost, delivery cost and status are set
+      // by the server.
+      const orderData = { name: orderName, foods: orderFoods };
+      const placed = await createOrder(orderData);
+      alert(`Order placed! Total charged: $${formatMoney(placed.cost)} `
+        + `(including $${formatMoney(placed.deliveryCost)} delivery).`);
       navigate('/orders');
     } catch (error) {
       console.error('Error creating order:', error);
-      alert('Failed to create order. Please try again.');
+      alert(`Failed to create order: ${error.message}`);
     } finally {
       setSubmitting(false);
     }
@@ -286,8 +289,9 @@ const CreateOrder = () => {
               </div>
               <div className="cart-summary">
                 <div className="summary-row"><span>Total Items:</span><span>{getTotalItems()}</span></div>
-                <div className="summary-row"><span>Delivery fee:</span><span>{getDeliveryCost()}</span></div>
-                <div className="summary-row total"><span>Total Price:</span><span>${getTotalPrice()}</span></div>
+                <div className="summary-row"><span>Estimated delivery fee:</span><span>${formatMoney(getEstimatedDeliveryCost())}</span></div>
+                <div className="summary-row total"><span>Estimated total:</span><span>${formatMoney(getEstimatedTotal())}</span></div>
+                <p className="summary-note">The final price is calculated when you place the order.</p>
               </div>
               <div className="cart-actions">
                 <button className="clear-button" onClick={clearCart} disabled={submitting}>Clear Cart</button>

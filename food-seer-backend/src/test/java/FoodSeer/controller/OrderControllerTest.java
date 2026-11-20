@@ -139,10 +139,16 @@ class OrderControllerTest {
 
         final OrderDto savedOrder = orderService.createOrder(orderDto);
 
+        // Changed in Milestone 2: a customer may no longer list every order
+        // (that exposed other customers' allergies). Staff/admin only.
         mvc.perform(get("/api/orders"))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
 
         mvc.perform(get("/api/orders/fulfilledOrders"))
+                .andExpect(status().isForbidden());
+
+        // Their own orders come from /my instead.
+        mvc.perform(get("/api/orders/my"))
                 .andExpect(status().isOk());
 
         mvc.perform(post("/api/orders")
@@ -249,31 +255,44 @@ class OrderControllerTest {
 
     @Test
     @Transactional
-    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    @WithMockUser(username = "staff", roles = "STAFF")
     void testGetOrder_NotFound() throws Exception {
         mvc.perform(get("/api/orders/999"))
                 .andExpect(status().isNotFound());
     }
 
+    // Changed in Milestone 2: a customer can only read their own orders, so a
+    // missing id is 403 for them, which doesn't reveal whether it exists.
+    @Test
+    @Transactional
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testGetOrder_NotFoundIsForbiddenForCustomers() throws Exception {
+        mvc.perform(get("/api/orders/999"))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     @Transactional
     void testGetMyOrders_Unauthorized() throws Exception {
-        mvc.perform(get("/api/orders/my-orders"))
-                .andExpect(status().isForbidden());
+        // Anonymous is 401 now that /api/orders/** is no longer permitAll (was 403).
+        mvc.perform(get("/api/orders/my"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
     @Transactional
     void testGetMyFulfilledOrders_Unauthorized() throws Exception {
-        mvc.perform(get("/api/orders/my-orders/fulfilled"))
-                .andExpect(status().isForbidden());
+        // Anonymous is 401 now that /api/orders/** is no longer permitAll (was 403).
+        mvc.perform(get("/api/orders/my/fulfilled"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
     @Transactional
     void testGetMyUnfulfilledOrders_Unauthorized() throws Exception {
-        mvc.perform(get("/api/orders/my-orders/unfulfilled"))
-                .andExpect(status().isForbidden());
+        // Anonymous is 401 now that /api/orders/** is no longer permitAll (was 403).
+        mvc.perform(get("/api/orders/my/unfulfilled"))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
@@ -287,7 +306,7 @@ class OrderControllerTest {
         orderDto.setFoods(new ArrayList<>(List.of(food)));
         orderService.createOrder(orderDto);
 
-        mvc.perform(get("/api/orders/my-orders"))
+        mvc.perform(get("/api/orders/my"))
                 .andExpect(status().isOk());
     }
 
@@ -308,7 +327,7 @@ class OrderControllerTest {
         entity.setIsFulfilled(true);
         orderRepository.save(entity);
 
-        mvc.perform(get("/api/orders/my-orders/fulfilled"))
+        mvc.perform(get("/api/orders/my/fulfilled"))
                 .andExpect(status().isOk());
     }
 
@@ -324,7 +343,7 @@ class OrderControllerTest {
         orderDto.setFoods(new ArrayList<>(List.of(food)));
         orderService.createOrder(orderDto);
 
-        mvc.perform(get("/api/orders/my-orders/unfulfilled"))
+        mvc.perform(get("/api/orders/my/unfulfilled"))
                 .andExpect(status().isOk());
     }
 

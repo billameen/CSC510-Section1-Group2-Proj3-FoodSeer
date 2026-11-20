@@ -93,7 +93,21 @@ Use this template and make a copy in the same folder called application.properti
 Inside of this newly created application.properties file change the following
 - spring.datasource.password: To whatever you have your MySQL password set to
 - app.jwt-secret: Using https://emn178.github.io/online-tools/sha256.html make a jwt secret
-- app.admin-user-password: To whatever you want the default admin password to be.
+
+The default admin password is not in this file. Set it as an environment
+variable before the first start, and the `admin` account is created with it:
+
+```bash
+# macOS / Linux
+export FOODSEER_ADMIN_PASSWORD='choose-a-password'
+# Windows Command Prompt
+set FOODSEER_ADMIN_PASSWORD=choose-a-password
+# Windows PowerShell
+$env:FOODSEER_ADMIN_PASSWORD = 'choose-a-password'
+```
+
+It is only used when no `admin` account exists yet, and it is never printed in
+the logs. If an admin already exists, its password is left alone.
 
 ### 3. How to Set Up Ollama
 
@@ -155,9 +169,12 @@ The backend will start on `http://localhost:8080`
 
 ### 5. Verify Backend
 
-The application automatically creates an admin user with credentials:
+On first start, if `FOODSEER_ADMIN_PASSWORD` is set, the application creates an admin user:
 - Username: `admin`
-- Password: `what you have app.admin-user-password set to in the application.properties file`
+- Password: the value of `FOODSEER_ADMIN_PASSWORD`
+
+Staff and admin accounts can't be created from the public sign-up form. Log in
+as `admin` and create them on the User Management page (or `POST /api/users`).
 
 You can test the login endpoint:
 ```bash
@@ -171,7 +188,7 @@ curl -X POST http://localhost:8080/auth/login \
 ### Application Flow:
 
 1. **Login Page** (`/`)
-   - Use demo credentials: `admin` / `admin123`
+   - Log in as `admin` with your `FOODSEER_ADMIN_PASSWORD`
    - Or register a new account
    - Clean, modern login interface
 

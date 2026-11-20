@@ -48,35 +48,37 @@ def test_admin_deletes_an_ordinary_user_and_their_orders(admin):
     assert get_status == 404, "deleted user should no longer be found"
 
 
-def test_an_admin_can_delete_their_own_account(admin):
-    """This documents extension 2a: UserServiceImpl.deleteUser() has no self-delete
-    check. Uses a throwaway promoted admin rather than the shared seeded one, so
-    this is safe to actually run."""
+def test_an_admin_cannot_delete_their_own_account(admin):
+    """Extension 2a. This used to document the bug (self-delete returned 200);
+    Milestone 2 added the guard, so it now asserts the refusal. Uses a
+    throwaway promoted admin rather than the shared seeded one."""
     account, token = register_and_login("customer", "self_delete_target")
     user_id = promote_to_admin(admin, account)
 
     status, body = api_request("DELETE", f"/api/users/{user_id}", token=token)
 
-    assert status == 200, body
+    assert status == 409, body
+    assert find_user_id(admin, account["username"]) == user_id, "the admin should still exist"
 
 
 def test_an_admin_should_not_be_able_to_delete_their_own_account(admin):
-    """This asserts the correct behavior for extension 2a and is expected to FAIL
-    today: an admin should not be able to delete their own account."""
+    """This asserts the correct behavior for extension 2a: an admin should not
+    be able to delete their own account. Fixed in Milestone 2; the refusal is
+    a 409 Conflict, like the other "would break user management" checks."""
     account, token = register_and_login("customer", "should_not_self_delete")
     user_id = promote_to_admin(admin, account)
 
     status, body = api_request("DELETE", f"/api/users/{user_id}", token=token)
 
-    assert status in {400, 403}, f"an admin was able to delete their own account: {status} {body}"
+    assert status in {400, 403, 409}, f"an admin was able to delete their own account: {status} {body}"
 
 
-def test_deleting_a_nonexistent_user_returns_200_instead_of_404(admin):
-    """This documents extension 2b: deleting a missing user id returns 200 OK
-    silently instead of 404, so the caller cannot tell whether anything happened."""
+def test_deleting_a_nonexistent_user_returns_404(admin):
+    """Extension 2b. This used to document a silent 200 for a missing user id;
+    since Milestone 2 the caller gets 404 and can tell nothing was deleted."""
     status, body = api_request("DELETE", "/api/users/999999999", token=admin)
 
-    assert status == 200, body
+    assert status == 404, body
 
 
 def test_deleting_a_user_with_orders_deletes_their_orders_too(admin):
@@ -115,7 +117,7 @@ def test_deleting_a_driver_leaves_driver_stats_orphaned(admin):
     account, _ = register_and_login("driver", "driver_to_delete")
 
     stats_status, _ = api_request(
-        "GET", f"/api/driverStats?username={account['username']}"
+        "GET", f"/api/driverStats?username={account['username']}", token=admin
     )
     assert stats_status == 200
 
@@ -124,7 +126,7 @@ def test_deleting_a_driver_leaves_driver_stats_orphaned(admin):
     assert delete_status == 200, delete_body
 
     stats_after_status, stats_after = api_request(
-        "GET", f"/api/driverStats?username={account['username']}"
+        "GET", f"/api/driverStats?username={account['username']}", token=admin
     )
     assert stats_after_status == 200, stats_after
     assert stats_after["username"] == account["username"], (

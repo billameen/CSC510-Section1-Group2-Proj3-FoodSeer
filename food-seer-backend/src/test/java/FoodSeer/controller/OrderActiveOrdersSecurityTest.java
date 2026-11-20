@@ -5,7 +5,6 @@ import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.User;
 import FoodSeer.repositories.UserRepository;
 import FoodSeer.security.CustomUserDetailsService;
-import FoodSeer.security.DriverStatsAccess;
 import FoodSeer.security.JwtAuthenticationFilter;
 import FoodSeer.security.JwtTokenProvider;
 import FoodSeer.service.OrderService;
@@ -37,14 +36,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * The endpoint's @PreAuthorize previously had no enforcement at all (the
  * annotation was commented out), so any caller could read any driver's
  * active orders by guessing a username. This mirrors DriverStatsSecurityTest,
- * reusing the same DriverStatsAccess ownership resolver.
+ * checking ownership against the username principal.
  */
 @WebMvcTest(value = OrderController.class, properties = {
     "app.jwt-secret=Zm9vZHNlZXItdGVzdC1vbmx5LXNpZ25pbmcta2V5LTMyaXRlbXM=",
     "app.jwt-expiration-milliseconds=60000"
 })
 @Import({SpringSecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
-    CustomUserDetailsService.class, DriverStatsAccess.class,
+    CustomUserDetailsService.class,
     JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class OrderActiveOrdersSecurityTest {
     @Autowired private MockMvc mvc;
@@ -72,12 +71,11 @@ class OrderActiveOrdersSecurityTest {
     @ParameterizedTest
     @ValueSource(strings = {"driver1", "missing"})
     void anonymousRequestsAreDenied(String username) throws Exception {
-        // /api/orders/** stays permitAll at the URL level (unlike /api/driverStats,
-        // which was tightened to authenticated()), so denial happens in method
-        // security and anonymous callers see 403 here, not 401 - consistent with
-        // this controller's other method-secured-only endpoints (e.g. /my-orders).
+        // /api/orders/** used to be permitAll at the URL level, so anonymous
+        // callers were stopped only by method security and saw 403. Milestone 2
+        // removed that rule; they are now rejected as unauthenticated (401).
         mvc.perform(get("/api/orders/activeOrders/{username}", username))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
         verifyNoInteractions(orderService);
     }
 

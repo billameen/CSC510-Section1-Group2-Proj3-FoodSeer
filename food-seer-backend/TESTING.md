@@ -34,7 +34,8 @@ Mockito from attaching its Java test agent; run from a normal terminal in that c
 - Anonymous requests receive 401, whether or not the requested driver exists.
 - Customers, staff, and other drivers receive 403.
 - Ownership alone does not give customers or staff driver privileges.
-- Drivers can access their own statistics after username or email authentication.
+- Drivers can access their own statistics after username or email authentication
+  (the principal is always the username, so ownership is `authentication.name == #username`).
 - Administrators can access another driver's statistics.
 - Two drivers have distinct, nonzero statistics; successful responses are checked
   against the requested driver's values.

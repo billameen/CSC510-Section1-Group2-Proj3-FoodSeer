@@ -5,8 +5,7 @@ import {
   getCurrentUser,
   rateFoodItem,
   reportCustomerReaction,
-  updateUserPreferences,
-  addAllergen
+  updateUserPreferences
 } from '../services/api'; // Added rateFoodItem
 import { ALLERGEN_SUGGESTIONS } from '../components/allergyOptions';
 
@@ -147,14 +146,8 @@ const Orders = () => {
         const updatedRestrictions = [...userAllergies, normalizedAllergen].join(', ');
         await updateUserPreferences(currentUser.costPreference, updatedRestrictions, currentUser.dailyCalorieGoal);
         setUserAllergies((prev) => [...prev, normalizedAllergen]);
-        // Also add it to the shared, site-wide allergen list (same list
-        // Personal Diet, the onboarding quiz, and staff's Add Food form use),
-        // so it's a real selectable option everywhere, not just this profile.
-        try {
-          await addAllergen(normalizedAllergen);
-        } catch (allergenError) {
-          console.error('Error adding allergen to the shared list:', allergenError);
-        }
+        // Saved on the customer's own profile only. The shared allergen list
+        // that staff tag dishes with is staff/admin-only.
       }
 
       setReactionResults({
@@ -291,8 +284,9 @@ const Orders = () => {
                       // --- RATING LOGIC ---
                       // Check if backend says this ID is already rated
                       const isRated = order.ratedFoodIds && order.ratedFoodIds.includes(food.id);
-                      // Only allow rating if order is Fulfilled AND not yet rated
-                      const canRate = order.isFulfilled && !isRated;
+                      // Only allow rating once the driver has delivered it, and once per dish
+                      // (the backend enforces both and answers 409 otherwise)
+                      const canRate = order.status === 'Delivered' && !isRated;
                       
                       const uniqueKey = `${food.id}-${order.id}`;
 

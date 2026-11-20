@@ -193,7 +193,14 @@ def create_order(customer_token, food, name):
 
 
 def mark_order_fulfilled(order_id, driver, driver_token):
-    """Move an order through Picked Up and Delivered using a driver account."""
+    """Move an order through Claimed, Picked Up and Delivered using a driver
+    account. Only the assigned driver may update an order, so the driver
+    claims it first."""
+    claim_status, claim_body = api_request(
+        "POST", f"/api/orders/{order_id}/claim", token=driver_token
+    )
+    assert claim_status == 200, claim_body
+
     pickup_status, pickup_body = api_request(
         "POST",
         f"/api/orders/{order_id}",
@@ -253,7 +260,7 @@ def test_customer_can_rate_food_from_fulfilled_order():
 
     orders_status, orders_body = api_request(
         "GET",
-        "/api/orders/my-orders",
+        "/api/orders/my",
         token=customer_token,
     )
 

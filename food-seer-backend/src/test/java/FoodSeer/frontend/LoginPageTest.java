@@ -35,7 +35,7 @@ public class LoginPageTest {
     // Wait object to handle time outs
     private WebDriverWait wait;
 
-    @Value("${app.admin-user-password}")
+    @Value("${FOODSEER_ADMIN_PASSWORD:${app.admin-user-password:}}")
     private String adminPassword;
 
     // Puts our admin in our repository

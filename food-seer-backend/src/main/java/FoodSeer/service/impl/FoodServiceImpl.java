@@ -307,7 +307,9 @@ public class FoodServiceImpl implements FoodService {
     // --- UPDATED METHOD FOR ONE RATING PER ORDER LOGIC ---
 
     /**
-     * Rates a food item ONLY if the order is fulfilled AND not already rated.
+     * Rates a food item ONLY if the order is delivered AND not already rated.
+     * Who may call this (the order's own customer) is checked by the
+     * controller's @PreAuthorize.
      */
     @Override
     @Transactional
@@ -322,9 +324,10 @@ public class FoodServiceImpl implements FoodService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found with ID: " + orderId));
 
-        // 3. GATEKEEPER: Is the order fulfilled?
-        if (!order.getIsFulfilled()) {
-            throw new IllegalStateException("You cannot rate an item from an order that has not been delivered/fulfilled yet.");
+        // 3. GATEKEEPER: Has the driver delivered it? (Staff marking an order
+        // fulfilled only means it's ready; the customer hasn't eaten it yet.)
+        if (!"Delivered".equals(order.getStatus())) {
+            throw new IllegalStateException("You can only rate food from an order that has been delivered.");
         }
 
         // 4. VALIDATION: Did they actually buy this food in this order?

@@ -5,6 +5,8 @@ import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.parameters.P;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,6 +55,7 @@ public class FoodController {
      * The ID of the food to return
      * @return The food
      */
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'DRIVER', 'STAFF', 'ADMIN')")
     @GetMapping ( "{id}" )
     public ResponseEntity<FoodDto> getFood ( @PathVariable ( "id" ) final Long id ) {
         final FoodDto foodDto = foodService.getFoodById( id );
@@ -66,6 +69,7 @@ public class FoodController {
      * The food DTO to create
      * @return response from creation
      */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @PostMapping
     public ResponseEntity<FoodDto> createFood ( @RequestBody final FoodDto foodDto ) {
         if ( foodService.isDuplicateName( foodDto.getFoodName() ) ) {
@@ -86,6 +90,7 @@ public class FoodController {
      *
      * @return JSON representation of all foods
      */
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'DRIVER', 'STAFF', 'ADMIN')")
     @GetMapping
     public List<FoodDto> getFoods () {
         return foodService.getAllFoods();
@@ -100,6 +105,7 @@ public class FoodController {
      * @return the calorie-aware recommendation
      */
     // new endpoint: GET /api/foods/withinCalorieBudget
+    @PreAuthorize("hasRole('CUSTOMER')")
     @GetMapping ( "/withinCalorieBudget" )
     public ResponseEntity<FoodRecommendationDto> getFoodsWithinCalorieBudget () {
         // resolve who's calling, via Spring Security's context
@@ -119,6 +125,7 @@ public class FoodController {
      * Id of the food to delete
      * @return Response Entity
      */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @DeleteMapping ( "{id}" )
     public ResponseEntity<String> deleteFood ( @PathVariable ( "id" ) final Long foodId ) {
         try {
@@ -137,6 +144,7 @@ public class FoodController {
      * FoodDto containing the updated fields
      * @return ResponseEntity containing the updated FoodDto
      */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @PostMapping ( "/updateFood" )
     public ResponseEntity<FoodDto> updateFood ( @RequestBody final FoodDto foodDto ) {
         // Check if food exists first by ID or name
@@ -168,35 +176,27 @@ public class FoodController {
         return ResponseEntity.ok(updatedFood);
     }
 
-    // --- NEW METHOD ---
-
     /**
-     * Rates a food item within a specific order context.
+     * Rates a food item within a specific order context. Only the customer
+     * who placed the order may rate it, once the driver has delivered it, and
+     * each dish once per order.
      * Endpoint: POST /api/foods/orders/{orderId}/{foodId}/rate?rating=5.0
      *
      * @param orderId The ID of the order
      * @param foodId The ID of the food
      * @param rating The rating value (0-5)
-     * @return The updated FoodDto with new average
+     * @return The updated FoodDto with new average; 400 for a bad rating or a
+     *         dish not in the order, 409 if not delivered or already rated
      */
+    @PreAuthorize("hasRole('CUSTOMER') and @orderAccess.isOwner(authentication, #orderId)")
     @PostMapping("/orders/{orderId}/{foodId}/rate")
-    public ResponseEntity<?> rateFood(
-            @PathVariable final Long orderId,
+    public ResponseEntity<FoodDto> rateFood(
+            @P("orderId") @PathVariable final Long orderId,
             @PathVariable final Long foodId,
             @RequestParam final Double rating) {
-        
-        try {
-            final FoodDto updatedFood = foodService.rateFoodInOrder(orderId, foodId, rating);
-            return ResponseEntity.ok(updatedFood);
-        } catch (final IllegalStateException e) {
-            // Returns 409 Conflict if order is not fulfilled
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(e.getMessage());
-        } catch (final IllegalArgumentException e) {
-            // Returns 400 Bad Request if food is not in order or invalid rating
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        } catch (final Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("An error occurred while rating the food.");
-        }
+        // Errors map through GlobalExceptionHandler: IllegalState -> 409,
+        // IllegalArgument -> 400, not found -> 404.
+        return ResponseEntity.ok(foodService.rateFoodInOrder(orderId, foodId, rating));
     }
 
 }

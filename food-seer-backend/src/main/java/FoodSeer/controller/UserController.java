@@ -1,6 +1,7 @@
 package FoodSeer.controller;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,10 +23,12 @@ import FoodSeer.dto.CalorieBudgetDto;
 import FoodSeer.dto.DailyCalorieHistoryDto;
 // request shape for the new logMeal endpoint below
 import FoodSeer.dto.LogMealRequestDto;
+import FoodSeer.dto.RegisterRequestDto;
 import FoodSeer.dto.UpdateRoleDto;
 import FoodSeer.dto.UserDto;
 import FoodSeer.dto.UserPreferencesDto;
 // supplies budget computation and meal logging for the two new endpoints below
+import FoodSeer.service.AuthService;
 import FoodSeer.service.CalorieBudgetService;
 import FoodSeer.service.UserService;
 import org.springframework.security.core.Authentication;
@@ -38,6 +41,10 @@ public class UserController {
     @Autowired
     private UserService userService;
 
+    // creates staff and admin accounts for POST /api/users
+    @Autowired
+    private AuthService authService;
+
     // powers the two new endpoints below: getCalorieBudget and logMeal
     @Autowired
     private CalorieBudgetService calorieBudgetService;
@@ -47,6 +54,14 @@ public class UserController {
     @PreAuthorize("hasRole('ADMIN')")
     public List<UserDto> listUsers() {
         return userService.listUsers().stream().map(UserDto::fromEntity).collect(Collectors.toList());
+    }
+
+    // Admin-only: create an account of any role. This is the only way to make
+    // staff or admin accounts; public sign-up is limited to customers and drivers.
+    @PostMapping("")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, String>> createUser(@RequestBody final RegisterRequestDto req) {
+        return authService.createAccount(req);
     }
 
     // Admin-only: get user by id
@@ -75,11 +90,14 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
+    @PreAuthorize("hasAnyRole('CUSTOMER', 'DRIVER', 'STAFF', 'ADMIN')")
     @GetMapping ( "/me" )
     public ResponseEntity<UserDto> getCurrentUser () {
         return ResponseEntity.ok( UserDto.fromEntity(userService.getCurrentUser()) );
     }
 
+    // Cost, allergy and calorie-goal preferences are customer settings.
+    @PreAuthorize("hasRole('CUSTOMER')")
     @PutMapping ( "/me/preferences" )
     public ResponseEntity<UserDto> updatePreferences (@RequestBody final UserPreferencesDto preferences) {
         final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -104,6 +122,7 @@ public class UserController {
     }
 
     // new endpoint: GET /api/users/me/calorieBudget
+    @PreAuthorize("hasRole('CUSTOMER')")
     @GetMapping ( "/me/calorieBudget" )
     public ResponseEntity<CalorieBudgetDto> getCalorieBudget () {
         // resolve who's calling
@@ -117,6 +136,7 @@ public class UserController {
     }
 
     // new endpoint: POST /api/users/me/mealLog
+    @PreAuthorize("hasRole('CUSTOMER')")
     @PostMapping ( "/me/mealLog" )
     public ResponseEntity<?> logMeal (@RequestBody final LogMealRequestDto req) {
         // resolve who's calling
@@ -139,6 +159,7 @@ public class UserController {
     }
 
     // new endpoint: GET /api/users/me/calorieHistory
+    @PreAuthorize("hasRole('CUSTOMER')")
     @GetMapping ( "/me/calorieHistory" )
     public ResponseEntity<List<DailyCalorieHistoryDto>> getCalorieHistory () {
         // resolve who's calling

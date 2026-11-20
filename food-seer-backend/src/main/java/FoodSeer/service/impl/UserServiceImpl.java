@@ -3,7 +3,11 @@ package FoodSeer.service.impl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import FoodSeer.constant.UserRole;
+import FoodSeer.entity.DriverStats;
 import FoodSeer.entity.Order;
+import FoodSeer.exception.ResourceNotFoundException;
+import FoodSeer.repositories.DriverStatsRepository;
 import FoodSeer.entity.User;
 // used to clean up a user's meal logs before deleting them, in deleteUser below
 import FoodSeer.repositories.MealLogRepository;
@@ -27,6 +31,10 @@ public class UserServiceImpl implements UserService {
     @Autowired
     private MealLogRepository mealLogRepository;
 
+    // gives a user promoted to driver the stats row the driver dashboard reads
+    @Autowired
+    private DriverStatsRepository driverStatsRepository;
+
     @Override
     public User getCurrentUser () {
         final Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -49,24 +57,48 @@ public class UserServiceImpl implements UserService {
         return userRepository.findById(id).orElse(null);
     }
 
+    /**
+     * Changes a user's role. The role is parsed, so an empty or invented role
+     * is a 400. Demoting the last admin is a 409, since nobody could manage
+     * users afterwards. A user who becomes a driver gets a driver-stats row,
+     * which the driver dashboard needs.
+     */
     @Override
     public User updateUserRole(final Long id, final String role) {
+        final UserRole newRole = UserRole.parse(role);
         final Optional<User> u = userRepository.findById(id);
         if (u.isEmpty()) return null;
         final User user = u.get();
-        user.setRole(role);
+        if (isLastAdmin(user) && newRole != UserRole.ADMIN) {
+            throw new IllegalStateException("You cannot remove the last admin. Make someone else an admin first.");
+        }
+        user.setRole(newRole.authority());
+        if (newRole == UserRole.DRIVER && driverStatsRepository.findByUsername(user.getUsername()).isEmpty()) {
+            final DriverStats stats = new DriverStats();
+            stats.setUsername(user.getUsername());
+            driverStatsRepository.save(stats);
+        }
         return userRepository.save(user);
     }
 
+    /**
+     * Deletes a user and their orders and meal logs. An admin can't delete
+     * their own account, and nobody can delete the last admin (409 for both),
+     * so the team can't lock itself out of user management.
+     */
     @Override
     public void deleteUser(final Long id) {
         // First, find the user
-        final Optional<User> userOpt = userRepository.findById(id);
-        if (userOpt.isEmpty()) {
-            return; // User doesn't exist, nothing to delete
+        final User user = userRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("User does not exist with id " + id));
+
+        final User caller = getCurrentUser();
+        if (caller != null && caller.getId() == user.getId()) {
+            throw new IllegalStateException("You cannot delete your own account.");
         }
-        
-        final User user = userOpt.get();
+        if (isLastAdmin(user)) {
+            throw new IllegalStateException("You cannot delete the last admin.");
+        }
 
         // Delete all orders associated with this user
         final List<Order> userOrders = orderRepository.findByUser(user);
@@ -79,6 +111,11 @@ public class UserServiceImpl implements UserService {
 
         // Now delete the user
         userRepository.deleteById(id);
+    }
+
+    private boolean isLastAdmin(final User user) {
+        return UserRole.ADMIN.authority().equals(user.getRole())
+                && userRepository.countByRole(UserRole.ADMIN.authority()) <= 1;
     }
 
     @Override

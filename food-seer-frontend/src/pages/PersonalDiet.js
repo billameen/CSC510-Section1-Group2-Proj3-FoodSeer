@@ -8,7 +8,6 @@ import {
   updateUserPreferences,
   logMeal,
   getAllergens,
-  addAllergen,
   createOrder
 } from '../services/api';
 
@@ -127,18 +126,9 @@ const PersonalDiet = () => {
     if (!allergyInput.includes(value)) {
       setAllergyInput((prev) => [...prev, value]);
     }
-    try {
-      // Persists this to the shared, site-wide list - from now on it shows
-      // up as a regular checkbox here (for every customer) and in the
-      // onboarding quiz and staff's Add Food form too, not just a one-off
-      // entry for this customer.
-      const updatedList = await addAllergen(value);
-      setAllergenOptions(updatedList);
-    } catch (error) {
-      console.error('Error adding allergen to the shared list:', error);
-      // Keep the customer's own selection even if the shared-list save failed -
-      // handleSaveAllergies below will still persist it on their own profile.
-    }
+    // A custom allergy is kept on this customer's own profile (saved by
+    // handleSaveAllergies below). The shared allergen list that staff tag
+    // dishes with is staff/admin-only.
   };
 
   const handleRemoveAllergy = (allergen) => {
@@ -214,6 +204,7 @@ const PersonalDiet = () => {
   const getCartItemsTotal = () =>
     Object.values(cart).reduce((total, item) => total + item.food.price * item.quantity, 0);
 
+  // Estimates for the cart display; the server prices the order when it is placed.
   const getCartDeliveryCost = () => parseFloat((0.3 * getCartItemsTotal()).toFixed(2));
 
   const getCartTotalPrice = () => parseFloat((getCartItemsTotal() + getCartDeliveryCost()).toFixed(2));
@@ -242,23 +233,21 @@ const PersonalDiet = () => {
       const orderFoods = Object.values(cart).flatMap((item) =>
         Array(item.quantity).fill({ id: item.food.id })
       );
+      // Only the name and the items; the server prices the order and sets its status.
       const orderData = {
         name: orderName,
-        foods: orderFoods,
-        isFulfilled: false,
-        cost: getCartTotalPrice(),
-        status: 'Placed',
-        deliveryCost: getCartDeliveryCost()
+        foods: orderFoods
       };
-      await createOrder(orderData);
-      alert('Order placed successfully!');
+      const placed = await createOrder(orderData);
+      alert(`Order placed! Total charged: $${Number(placed.cost).toFixed(2)} `
+        + `(including $${Number(placed.deliveryCost).toFixed(2)} delivery).`);
       setCart({});
       setOrderName('');
       // The order's foods count toward today's consumption - refresh the budget and recommendation.
       await loadAll();
     } catch (error) {
       console.error('Error placing order:', error);
-      alert('Failed to place order. Please try again.');
+      alert(`Failed to place order: ${error.message}`);
     } finally {
       setPlacingOrder(false);
     }
@@ -568,11 +557,11 @@ const PersonalDiet = () => {
                 </span>
               </div>
               <div className="preference-item">
-                <span className="preference-label">Delivery fee:</span>
+                <span className="preference-label">Estimated delivery fee:</span>
                 <span className="preference-value">${getCartDeliveryCost()}</span>
               </div>
               <div className="preference-item">
-                <span className="preference-label">Total Price:</span>
+                <span className="preference-label">Estimated total:</span>
                 <span className="preference-value">${getCartTotalPrice()}</span>
               </div>
             </div>

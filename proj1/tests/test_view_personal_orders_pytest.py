@@ -168,7 +168,7 @@ def test_customer_can_view_personal_orders():
 
     orders_status, orders_body = api_request(
         "GET",
-        "/api/orders/my-orders",
+        "/api/orders/my",
         token=token,
     )
 
@@ -209,7 +209,7 @@ def test_personal_orders_do_not_include_another_customers_order():
 
     second_status, second_body = api_request(
         "GET",
-        "/api/orders/my-orders",
+        "/api/orders/my",
         token=second_token,
     )
 
@@ -227,7 +227,7 @@ def test_new_customer_receives_empty_personal_order_list():
 
     orders_status, orders_body = api_request(
         "GET",
-        "/api/orders/my-orders",
+        "/api/orders/my",
         token=token,
     )
 
@@ -258,7 +258,7 @@ def test_personal_order_details_preserve_repeated_food_entries():
 
     orders_status, orders_body = api_request(
         "GET",
-        "/api/orders/my-orders",
+        "/api/orders/my",
         token=token,
     )
 

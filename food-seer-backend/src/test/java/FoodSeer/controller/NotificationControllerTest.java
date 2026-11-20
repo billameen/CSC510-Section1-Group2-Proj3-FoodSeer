@@ -32,7 +32,6 @@ import FoodSeer.entity.User;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.repositories.UserRepository;
 import FoodSeer.security.CustomUserDetailsService;
-import FoodSeer.security.DriverStatsAccess;
 import FoodSeer.security.JwtAuthenticationFilter;
 import FoodSeer.security.JwtTokenProvider;
 import FoodSeer.service.NotificationService;
@@ -48,7 +47,7 @@ import FoodSeer.service.impl.JwtAuthenticationEntryPoint;
     "app.jwt-expiration-milliseconds=60000"
 })
 @Import({SpringSecurityConfig.class, JwtAuthenticationFilter.class, JwtTokenProvider.class,
-    CustomUserDetailsService.class, DriverStatsAccess.class,
+    CustomUserDetailsService.class,
     JwtAuthenticationEntryPoint.class, JwtAccessDeniedHandler.class})
 class NotificationControllerTest {
 

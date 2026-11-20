@@ -1,8 +1,11 @@
 package FoodSeer.config;
 
+import java.util.List;
+
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -12,6 +15,9 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import FoodSeer.security.JwtAuthenticationFilter;
 import FoodSeer.service.impl.JwtAccessDeniedHandler;
@@ -54,23 +60,49 @@ public class SpringSecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain ( final HttpSecurity http ) throws Exception {
         http.csrf( ( csrf ) -> csrf.disable() )
+            // CORS runs before authentication, so 401 and 403 responses from the
+            // security layer carry CORS headers too. Without this the browser
+            // hides them as network errors and the frontend can't tell that a
+            // session expired.
+            .cors( Customizer.withDefaults() )
             .exceptionHandling(exception -> exception
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests( ( authorize ) -> {
+                // Only login and sign-up are open. Everything else needs a valid
+                // token here AND a role rule (@PreAuthorize) on its controller
+                // method, so no endpoint relies on just one of the two. The full
+                // table is docs/authorization-matrix.md.
                 authorize.requestMatchers( "/auth/**" ).permitAll();
                 authorize.requestMatchers( HttpMethod.OPTIONS, "/**" ).permitAll(); // allows preflight
-                authorize.requestMatchers( HttpMethod.GET, "/api/locations/{id:[0-9]+}" ).permitAll();
-                authorize.requestMatchers( HttpMethod.GET, "/api/driverStats", "/api/driverStats/**").authenticated();
-                authorize.requestMatchers( HttpMethod.GET, "/api/orders/**").permitAll();
-                authorize.requestMatchers( HttpMethod.POST, "/api/orders/**").permitAll();
                 authorize.anyRequest().authenticated();
             })
-            .httpBasic(Customizer.withDefaults());
+            // JWT only. HTTP Basic would accept a password on every request
+            // and answer anonymous calls with a browser login prompt.
+            .httpBasic( ( basic ) -> basic.disable() )
+            .formLogin( ( form ) -> form.disable() );
 
         http.addFilterBefore( authenticationFilter, UsernamePasswordAuthenticationFilter.class );
 
         return http.build();
+    }
+
+    /**
+     * CORS for the API, the same policy the controllers' @CrossOrigin("*")
+     * already declared: any origin, standard methods, and the Authorization
+     * header. Applied in the security filter chain (see .cors above).
+     *
+     * @return CORS configuration for every path
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource () {
+        final CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOriginPatterns( List.of( "*" ) );
+        config.setAllowedMethods( List.of( "GET", "POST", "PUT", "DELETE", "OPTIONS" ) );
+        config.setAllowedHeaders( List.of( "Authorization", "Content-Type" ) );
+        final UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration( "/**", config );
+        return source;
     }
 
     /**

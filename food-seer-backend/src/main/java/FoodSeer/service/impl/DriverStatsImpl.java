@@ -2,6 +2,7 @@ package FoodSeer.service.impl;
 
 import FoodSeer.dto.DriverStatsDto;
 import FoodSeer.entity.DriverStats;
+import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.mapper.DriverStatsMapper;
 import FoodSeer.repositories.DriverStatsRepository;
 import FoodSeer.service.DriverStatsService;
@@ -26,12 +27,9 @@ public class DriverStatsImpl implements DriverStatsService {
     @Override
     public DriverStatsDto getDriverStats(String username){
         logger.info("Getting driver stats for username: {}", username);
-        Optional<DriverStats> driverStats = driverStatsRepository.findByUsername(username);
-        if (driverStats.isEmpty()) {
-            logger.info("The user {} does not exist in the database.", username);
-            return null;
-        }
-        return DriverStatsMapper.mapToDriverStatsDto(driverStats.get());
+        final DriverStats driverStats = driverStatsRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("No driver statistics for " + username));
+        return DriverStatsMapper.mapToDriverStatsDto(driverStats);
     }
 
     @Override

@@ -143,7 +143,10 @@ def test_delivering_an_order_with_no_assigned_driver_crashes():
 
     status, body = update_status(order["id"], "Delivered", driver["username"], driver_token)
 
-    assert status == 500, body
+    # No longer a crash: the service now checks the caller is the order's
+    # assigned driver before reading the status, and since Milestone 2 that
+    # SecurityException maps to 403 instead of an unhandled 500.
+    assert status == 403, body
 
 
 def test_a_missing_status_value_crashes():
@@ -162,7 +165,9 @@ def test_a_missing_status_value_crashes():
         token=driver_token,
     )
 
-    assert status == 500, body
+    # Rejected before the missing status is read: this driver isn't assigned to
+    # the order, which is a 403 since Milestone 2 (it surfaced as 500 before).
+    assert status == 403, body
 
 
 def test_an_unrecognized_status_value_is_accepted():

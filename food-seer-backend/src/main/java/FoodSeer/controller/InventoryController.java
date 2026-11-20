@@ -48,7 +48,7 @@ public class InventoryController {
      *            Updated inventory data
      * @return ResponseEntity containing the saved InventoryDto
      */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CUSTOMER')")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @PostMapping
     public ResponseEntity<InventoryDto> updateInventory(@RequestBody final InventoryDto inventoryDto) {
         final InventoryDto savedInventoryDto = inventoryService.updateInventory(inventoryDto);
