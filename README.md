@@ -18,6 +18,7 @@ Food Seer was built by a CSC510 team in Fall 2025 ([original repo](https://githu
 | **Allergy incident trace-back** | When a restaurant or a customer reports an allergic reaction, Food Seer finds other customers who ate the same dishes in that time window and have a matching allergy, and sends each a private safety notice. Staff acknowledge the incident and attach an offer. | [docs/allergy-trace-back.md](docs/allergy-trace-back.md) |
 | **Fitness-based calorie tracking** | Turns a customer's fitness data into a daily calorie budget, tracks calories from today's orders and logged meals, and recommends foods that fit what is left (Personal Diet page). | [docs/personal-diet.md](docs/personal-diet.md) |
 | **M2: security hardening** | One role × endpoint table that every API call is checked against: public sign-up is customers and drivers only, customers see only their own orders, the server prices orders, menu and inventory writes are staff/admin only, and errors no longer leak internals. `AuthorizationMatrixTest` runs the whole table and fails if an endpoint is added without a row or a role rule. | [docs/authorization-matrix.md](docs/authorization-matrix.md) |
+| **M3: order state machine** | Orders move Placed → Claimed → Picked Up → Delivered, or to Cancelled, through one transition table, and any other move is refused with 409. Stock is reserved when an order is placed (all or nothing) and returned on cancel, drivers are credited once, two drivers can't claim the same order, and deleting a food or user no longer rewrites or deletes past orders. Customers can cancel an order until a driver claims it. | [docs/order-lifecycle.md](docs/order-lifecycle.md) |
 | **Pantry-Paired Ordering** | Matches restaurant entrees with recipes based on ingredients the customer already has in their pantry. Shows ingredient-match percentages, missing ingredients, preparation time, and cooking instructions, while respecting dietary restrictions. Customers can select or skip suggested recipes. | [docs/docs/pantry-pairing.md](docs/docs/pantry-pairing.md) |
 
 The **M0 Eval** badge above fails whenever the claim fails, with no tuning to pass, so the number is honest and reproducible (`cd food-seer-backend && mvn -Dtest=M0TraceEval test`).
@@ -86,7 +87,7 @@ The core customer experience centers on choice and feedback.
 
 ### 2. Admin
 Admins manage the platform using two specific dashboards.
-* **Order Dashboard:** Admins can view all incoming orders and mark them as **fulfilled**.
+* **Order Dashboard:** Staff and admins can view all incoming orders and cancel ones that can't be completed. Orders are fulfilled when the driver delivers them.
 * **Food Dashboard:** Admins can manage the food inventory and update stock levels/menu items.
 
 ### 3. Driver
