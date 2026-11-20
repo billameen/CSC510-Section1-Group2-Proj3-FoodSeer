@@ -154,6 +154,55 @@ class OrderServiceImplTest {
     }
 
     @Test
+    void createOrder_recordsWhoWhatAndWhen() {
+        Food soup = food(3L, "SOUP", 6);
+        when(stockService.reserve(List.of(3L))).thenReturn(List.of(soup));
+        User currentUser = new User();
+        currentUser.setUsername("customer");
+        currentUser.setDietaryRestrictions("PEANUTS");
+        when(userService.getCurrentUser()).thenReturn(currentUser);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        final java.time.LocalDateTime before = java.time.LocalDateTime.now();
+
+        orderService.createOrder(NewOrderRequest.of("Soup night", List.of(3L)));
+
+        ArgumentCaptor<Order> saved = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(saved.capture());
+        Order order = saved.getValue();
+        assertEquals("Soup night", order.getName());
+        assertEquals(List.of(soup), order.getFoods());
+        assertEquals(1, order.getLines().size());
+        assertEquals("SOUP", order.getLines().get(0).getFoodName());
+        assertSame(currentUser, order.getUser());
+        assertEquals("PEANUTS", order.getAllergyRestrictions());
+        assertNotNull(order.getCreatedAt());
+        assertFalse(order.getCreatedAt().isBefore(before));
+    }
+
+    @Test
+    void createOrder_byNonCustomer_isRefusedBeforeTouchingStock() {
+        User staff = new User();
+        staff.setUsername("staff");
+        staff.setRole("ROLE_STAFF");
+        when(userService.getCurrentUser()).thenReturn(staff);
+
+        assertThrows(SecurityException.class,
+                () -> orderService.createOrder(NewOrderRequest.of("Nope", List.of(1L))));
+        verify(stockService, never()).reserve(anyList());
+    }
+
+    @Test
+    void getAllOrders_mapsEveryOrder() {
+        Order a = new Order(1L, "A");
+        Order b = new Order(2L, "B");
+        when(orderRepository.findAll()).thenReturn(List.of(a, b));
+
+        List<OrderDto> all = orderService.getAllOrders();
+
+        assertEquals(List.of(1L, 2L), all.stream().map(OrderDto::getId).toList());
+    }
+
+    @Test
     void getOrderById_whenNotFound_throwsResourceNotFound() {
         when(orderRepository.findById(77L)).thenReturn(Optional.empty());
         ResourceNotFoundException ex = assertThrows(ResourceNotFoundException.class,
