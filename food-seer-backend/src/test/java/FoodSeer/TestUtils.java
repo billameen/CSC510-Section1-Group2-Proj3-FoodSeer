@@ -22,4 +22,14 @@ public class TestUtils {
             throw new RuntimeException(e);
         }
     }
+
+    /**
+     * The ids of the given foods, one per entry, for building a NewOrderRequest.
+     *
+     * @param foods foods, one entry per unit
+     * @return their ids
+     */
+    public static java.util.List<Long> foodIds ( final java.util.List<FoodSeer.entity.Food> foods ) {
+        return foods.stream().map( FoodSeer.entity.Food::getId ).collect( java.util.stream.Collectors.toList() );
+    }
 }

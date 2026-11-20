@@ -2,6 +2,7 @@ package FoodSeer.service;
 
 import java.util.List;
 
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.exception.ResourceNotFoundException;
 
@@ -17,7 +18,7 @@ public interface OrderService {
      *            the order to create
      * @return the created order as a DTO
      */
-    OrderDto createOrder(OrderDto orderDto);
+    OrderDto createOrder(NewOrderRequest request);
 
     /**
      * Retrieves an order by its ID.
@@ -37,14 +38,6 @@ public interface OrderService {
      */
     List<OrderDto> getAllOrders();
 
-    /**
-     * Marks an order as fulfilled.
-     *
-     * @param orderId
-     *            the ID of the order to fulfill
-     * @return the updated order as a DTO
-     */
-    OrderDto fulfillOrder(long orderId);
 
     /**
      * Retrieves all fulfilled orders.
@@ -83,6 +76,14 @@ public interface OrderService {
 
     OrderDto updateOrder(final Long id, String username, String status);
     OrderDto claimOrder(Long orderId);
+
+    /**
+     * Cancels an order and releases its reserved stock.
+     *
+     * @param orderId the order
+     * @return the cancelled order
+     */
+    OrderDto cancelOrder(Long orderId);
 
     List<OrderDto> getAvailableOrders();
 

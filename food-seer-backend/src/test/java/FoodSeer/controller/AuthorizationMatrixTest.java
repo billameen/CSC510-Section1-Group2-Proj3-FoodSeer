@@ -1,5 +1,6 @@
 package FoodSeer.controller;
 
+import FoodSeer.constant.OrderStatus;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -200,9 +201,9 @@ class AuthorizationMatrixTest {
             row("GET", "/api/orders/my/fulfilled", null, "401 OK 403 403 403"),
             row("GET", "/api/orders/my/unfulfilled", null, "401 OK 403 403 403"),
             row("POST", "/api/orders", "{\"name\":\"Lunch\",\"foods\":[{\"id\":1}]}", "401 OK 403 403 403"),
-            row("POST", "/api/orders/fulfillOrder", "{\"id\":1}", "401 403 403 OK OK"),
             row("GET", "/api/orders/1", null, "401 OK OK OK OK"),
             row("POST", "/api/orders/1", "{\"username\":\"driver\",\"status\":\"Picked Up\"}", "401 403 OK 403 403"),
+            row("POST", "/api/orders/1/cancel", null, "401 OK 403 OK OK"),
             row("POST", "/api/orders/1/claim", null, "401 403 OK 403 403"),
             row("GET", "/api/orders/availableOrders", null, "401 403 OK 403 OK"),
             row("GET", "/api/orders/activeOrders/driver", null, "401 403 OK 403 OK"),
@@ -238,6 +239,7 @@ class AuthorizationMatrixTest {
             Arguments.of("customer2", "GET", "/api/orders/1", null, 403),
             Arguments.of("driver2", "GET", "/api/orders/1", null, 403),
             Arguments.of("customer2", "POST", "/api/foods/orders/1/1/rate?rating=5", null, 403),
+            Arguments.of("customer2", "POST", "/api/orders/1/cancel", null, 403),
             Arguments.of("driver2", "GET", "/api/orders/activeOrders/driver", null, 403),
             Arguments.of("driver2", "GET", "/api/driverStats?username=driver", null, 403),
             // The customer's own order, reached by logging in with their email address.
@@ -280,8 +282,7 @@ class AuthorizationMatrixTest {
         final Order order = new Order(1L, "Lunch");
         order.setUser(owner);
         order.setDriver(assigned);
-        order.setStatus("Delivered");
-        order.setIsFulfilled(true);
+        order.setStatus(OrderStatus.DELIVERED);
         when(orders.findById(1L)).thenReturn(Optional.of(order));
 
         // Happy-path stubs so an allowed call returns 2xx.
@@ -294,7 +295,6 @@ class AuthorizationMatrixTest {
         when(foodService.isDuplicateName("PAD THAI")).thenReturn(true);
         final OrderDto orderDto = new OrderDto(1L, "Lunch");
         when(orderService.getOrderById(1L)).thenReturn(orderDto);
-        when(orderService.fulfillOrder(anyLong())).thenReturn(orderDto);
         when(driverStatsService.getDriverStats("driver"))
                 .thenReturn(new DriverStatsDto("driver", 1, BigDecimal.ONE, BigDecimal.ONE, 0));
         final AllergyAcknowledgment ack = mock(AllergyAcknowledgment.class);

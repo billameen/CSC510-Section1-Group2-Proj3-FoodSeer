@@ -67,7 +67,7 @@ public class ChatServiceImpl implements ChatService {
                 msgLower.contains("suggest food")) {
 
                 // Fetch menu from DB
-                List<Food> foods = foodRepository.findAll();
+                List<Food> foods = foodRepository.findByActiveTrue();
                 String menuString = foods.stream()
                         .map(f -> f.getFoodName() + " ($" + f.getPrice() + ")"
                                 + (f.getAllergies() != null && !f.getAllergies().isEmpty()

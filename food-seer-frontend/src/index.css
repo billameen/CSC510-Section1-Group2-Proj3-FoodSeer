@@ -1323,6 +1323,38 @@ code {
   font-weight: 600;
 }
 
+.order-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-badge.cancelled {
+  background: #f1f1f1;
+  color: #6c757d;
+}
+
+.cancel-order-button {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.cancel-order-button:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
+.cancel-order-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
 .order-summary {
   display: flex;
   gap: 20px;

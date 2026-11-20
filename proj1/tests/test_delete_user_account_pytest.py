@@ -9,6 +9,7 @@ from api_helpers import (
     api_request,
     admin_token,
     find_user_id,
+    login,
     register_and_login,
     require_backend,
 )
@@ -81,9 +82,11 @@ def test_deleting_a_nonexistent_user_returns_404(admin):
     assert status == 404, body
 
 
-def test_deleting_a_user_with_orders_deletes_their_orders_too(admin):
-    """This documents extension 5a: deleting a user hard-deletes their orders,
-    with no warning and no archive."""
+def test_deleting_a_user_keeps_their_orders(admin):
+    """Extension 5a: deleting a user used to hard-delete their orders with no
+    warning and no archive. Since Milestone 3 a user delete is a soft delete:
+    the account can't sign in and leaves the user list, but its orders stay
+    for history and allergy trace-back."""
     account, token = register_and_login("customer", "order_owner_to_delete")
 
     foods_status, foods = api_request("GET", "/api/foods", token=token)
@@ -92,14 +95,7 @@ def test_deleting_a_user_with_orders_deletes_their_orders_too(admin):
     assert in_stock, "no in-stock foods available for this test"
     food = in_stock[0]
 
-    order_payload = {
-        "name": "Order To Be Cascaded",
-        "foods": [{"id": food["id"]}],
-        "isFulfilled": False,
-        "cost": food["price"],
-        "status": "Placed",
-        "deliveryCost": 0,
-    }
+    order_payload = {"name": "Order That Outlives Its Owner", "foods": [{"id": food["id"]}]}
     order_status, order = api_request("POST", "/api/orders", order_payload, token=token)
     assert order_status == 200, order
 
@@ -107,8 +103,13 @@ def test_deleting_a_user_with_orders_deletes_their_orders_too(admin):
     delete_status, delete_body = api_request("DELETE", f"/api/users/{user_id}", token=admin)
     assert delete_status == 200, delete_body
 
-    order_get_status, _ = api_request("GET", f"/api/orders/{order['id']}", token=admin)
-    assert order_get_status == 404, "the deleted user's order should be gone too"
+    order_get_status, kept = api_request("GET", f"/api/orders/{order['id']}", token=admin)
+    assert order_get_status == 200, kept
+    assert kept["customerUsername"] == account["username"], kept
+
+    _, users = api_request("GET", "/api/users", token=admin)
+    assert all(u["username"] != account["username"] for u in users), users
+    assert login(account["username"], account["password"]) is None
 
 
 def test_deleting_a_driver_leaves_driver_stats_orphaned(admin):

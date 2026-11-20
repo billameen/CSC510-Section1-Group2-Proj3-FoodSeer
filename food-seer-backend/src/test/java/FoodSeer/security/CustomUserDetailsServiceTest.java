@@ -52,4 +52,21 @@ class CustomUserDetailsServiceTest {
 
         assertThrows(UsernameNotFoundException.class, () -> service.loadUserByUsername("ghost"));
     }
+
+    @Test
+    void aDeletedAccountCannotLogIn() {
+        final User deleted = user("ROLE_CUSTOMER");
+        deleted.setActive(false);
+        when(users.findByUsernameOrEmail("sid", "sid")).thenReturn(Optional.of(deleted));
+
+        assertThrows(DisabledException.class, () -> service.loadUserByUsername("sid"));
+    }
+
+    @Test
+    void newAccountsAreActiveHoweverTheyAreBuilt() {
+        assertTrue(new User().isActive());
+        assertTrue(user("ROLE_CUSTOMER").isActive());
+        assertTrue(new User(new FoodSeer.dto.RegisterRequestDto("a", "a@x.test", "password1", "customer"), "h",
+                "ROLE_CUSTOMER").isActive());
+    }
 }

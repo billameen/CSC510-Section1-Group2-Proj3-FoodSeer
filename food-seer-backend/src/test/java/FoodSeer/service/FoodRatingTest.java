@@ -1,5 +1,6 @@
 package FoodSeer.service;
 
+import FoodSeer.constant.OrderStatus;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -58,20 +59,17 @@ class FoodRatingTest {
 
     @Test
     void cannotRateBeforeDelivery() {
-        for (final String status : new String[] { "Placed", "Claimed", "Picked Up" }) {
+        for (final OrderStatus status : new OrderStatus[] { OrderStatus.PLACED, OrderStatus.CLAIMED, OrderStatus.PICKED_UP }) {
             order.setStatus(status);
-            // Staff marking it fulfilled is not enough either.
-            order.setIsFulfilled(true);
 
-            assertThrows(IllegalStateException.class, () -> foodService.rateFoodInOrder(3L, 7L, 4.0), status);
+            assertThrows(IllegalStateException.class, () -> foodService.rateFoodInOrder(3L, 7L, 4.0), status.name());
         }
         verify(foodRepository, never()).saveAndFlush(any());
     }
 
     @Test
     void ratesADeliveredOrderOncePerDish() {
-        order.setStatus("Delivered");
-        order.setIsFulfilled(true);
+        order.setStatus(OrderStatus.DELIVERED);
         when(foodRepository.findById(7L)).thenReturn(Optional.of(food));
         when(foodRepository.saveAndFlush(food)).thenReturn(food);
 
@@ -84,7 +82,7 @@ class FoodRatingTest {
 
     @Test
     void rejectsAnOutOfRangeRatingOrADishNotInTheOrder() {
-        order.setStatus("Delivered");
+        order.setStatus(OrderStatus.DELIVERED);
 
         assertThrows(IllegalArgumentException.class, () -> foodService.rateFoodInOrder(3L, 7L, 6.0));
         assertThrows(IllegalArgumentException.class, () -> foodService.rateFoodInOrder(3L, 99L, 4.0));

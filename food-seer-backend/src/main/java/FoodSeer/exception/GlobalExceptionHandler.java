@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
@@ -25,7 +26,7 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * <ul>
  * <li>AccessDeniedException, SecurityException: 403</li>
  * <li>ResourceNotFoundException: 404</li>
- * <li>IllegalStateException, a database constraint: 409</li>
+ * <li>IllegalStateException, a database constraint, a concurrent change: 409</li>
  * <li>IllegalArgumentException, an unreadable body, a missing or mistyped
  * parameter: 400</li>
  * <li>anything else: 500 with a generic message</li>
@@ -127,6 +128,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorDetails> handleIllegalState ( final IllegalStateException ex,
             final WebRequest request ) {
         return respond( HttpStatus.CONFLICT, ex.getMessage(), request );
+    }
+
+    /**
+     * Two requests changed the same order at once (the @Version check), for
+     * example two drivers claiming it. The first wins.
+     *
+     * @param ex
+     *            The thrown exception
+     * @param request
+     *            The web request
+     * @return 409
+     */
+    @ExceptionHandler ( ObjectOptimisticLockingFailureException.class )
+    public ResponseEntity<ErrorDetails> handleConcurrentChange ( final ObjectOptimisticLockingFailureException ex,
+            final WebRequest request ) {
+        return respond( HttpStatus.CONFLICT, "Someone else changed this order at the same time. Refresh and try again.",
+                request );
     }
 
     /**

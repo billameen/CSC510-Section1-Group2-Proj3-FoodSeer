@@ -377,15 +377,16 @@ export const createOrder = async (orderData) => {
   }
 };
 
-export const fulfillOrder = async (orderId) => {
+// Customers can cancel their own order while it is still placed; staff and
+// admins can cancel anything not yet delivered. Cancelling puts the stock back.
+export const cancelOrder = async (orderId) => {
   try {
-    return await request('/api/orders/fulfillOrder', {
+    return await request(`/api/orders/${orderId}/cancel`, {
       method: 'POST',
-      body: { id: orderId },
-      fallbackError: 'Failed to fulfill order',
+      fallbackError: 'Failed to cancel order',
     });
   } catch (error) {
-    console.error('Fulfill order error:', error);
+    console.error('Cancel order error:', error);
     throw error;
   }
 };

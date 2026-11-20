@@ -12,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.parameters.P;
 import org.springframework.web.bind.annotation.*;
 
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.service.OrderService;
@@ -72,39 +73,9 @@ public class OrderController {
      */
     @PreAuthorize("hasRole('CUSTOMER')")
     @PostMapping
-    public ResponseEntity<OrderDto> createOrder(@RequestBody final OrderDto orderDto) {
-        logger.info("Creating order: {}", orderDto.toString());
-        final OrderDto savedOrderDto = orderService.createOrder(orderDto);
+    public ResponseEntity<OrderDto> createOrder(@RequestBody final NewOrderRequest request) {
+        final OrderDto savedOrderDto = orderService.createOrder(request);
         return ResponseEntity.ok(savedOrderDto);
-    }
-
-    /**
-     * Marks an order as fulfilled.
-     *
-     * @param orderDto the order to fulfill
-     * @return ResponseEntity with status depending on fulfillment result
-     */
-    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
-    @PostMapping("/fulfillOrder")
-    public ResponseEntity<OrderDto> fulfillOrder(@RequestBody final OrderDto orderDto) {
-        try {
-            orderService.getOrderById(orderDto.getId());
-        } catch (final ResourceNotFoundException e) {
-            return new ResponseEntity<>(orderDto, HttpStatus.PRECONDITION_FAILED);
-        }
-
-        final OrderDto existingOrder = orderService.getOrderById(orderDto.getId());
-
-        if (existingOrder.getIsFulfilled()) {
-            return new ResponseEntity<>(orderDto, HttpStatus.GONE);
-        }
-
-        try {
-            final OrderDto updatedOrder = orderService.fulfillOrder(existingOrder.getId());
-            return ResponseEntity.ok(updatedOrder);
-        } catch (final Exception e) {
-            return new ResponseEntity<>(orderDto, HttpStatus.BAD_REQUEST);
-        }
     }
 
     /**
@@ -176,19 +147,26 @@ public class OrderController {
         return ResponseEntity.ok(updatedOrderDto);
     }
 
+    /**
+     * Cancels an order and releases its reserved stock. A customer can cancel
+     * their own order until a driver claims it; staff and admin can cancel
+     * any order that hasn't been delivered.
+     *
+     * @param id the order
+     * @return the cancelled order; 409 if it can't be cancelled any more
+     */
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')"
+            + " or (hasRole('CUSTOMER') and @orderAccess.isOwner(authentication, #id))")
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<OrderDto> cancelOrder(@P("id") @PathVariable("id") final Long id) {
+        return ResponseEntity.ok(orderService.cancelOrder(id));
+    }
+
     @PreAuthorize("hasRole('DRIVER')")
     @PostMapping("/{id}/claim")
-    public ResponseEntity<?> claimOrder(@PathVariable("id") final Long id) {
-        try {
-            final OrderDto claimedOrder = orderService.claimOrder(id);
-            return ResponseEntity.ok(claimedOrder);
-        } catch (ResourceNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body("Order not found");
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(e.getMessage());
-        }
+    public ResponseEntity<OrderDto> claimOrder(@PathVariable("id") final Long id) {
+        // 404 unknown order, 409 already claimed (including a lost race), 403 not a driver
+        return ResponseEntity.ok(orderService.claimOrder(id));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
