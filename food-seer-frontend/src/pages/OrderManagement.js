@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import {
   getUnfulfilledOrders,
   getFulfilledOrders,
-  fulfillOrder,
+  cancelOrder,
   getCurrentUser,
   acknowledgeAllergyHandoff,
   getAllergyHandoffStatus
 } from '../services/api';
+import { staffCanCancel, statusBadge } from '../data/orderStatus';
 
 const OrderManagement = () => {
   const [unfulfilledOrders, setUnfulfilledOrders] = useState([]);
@@ -82,18 +83,18 @@ const OrderManagement = () => {
   }
 };
 
-  const handleFulfillOrder = async (orderId) => {
-    if (!window.confirm('Mark this order as fulfilled?')) return;
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm('Cancel this order? Its items go back into stock.')) return;
 
     setProcessing(prev => ({ ...prev, [orderId]: true }));
 
     try {
-      await fulfillOrder(orderId);
-      alert('Order fulfilled successfully!');
+      await cancelOrder(orderId);
       await fetchOrders();
     } catch (error) {
-      console.error('Error fulfilling order:', error);
-      alert('Failed to fulfill order. Please try again.');
+      console.error('Error cancelling order:', error);
+      alert(error.message || 'Failed to cancel order. Please try again.');
+      await fetchOrders();
     } finally {
       setProcessing(prev => ({ ...prev, [orderId]: false }));
     }
@@ -125,11 +126,11 @@ const OrderManagement = () => {
 
       <div className="dashboard-stats">
         <div className="stat-card">
-          <h3>Pending Orders</h3>
+          <h3>Active Orders</h3>
           <p className="stat-number">{unfulfilledOrders.length}</p>
         </div>
         <div className="stat-card">
-          <h3>Fulfilled Today</h3>
+          <h3>Delivered</h3>
           <p className="stat-number">{fulfilledOrders.length}</p>
         </div>
         <div className="stat-card">
@@ -143,19 +144,19 @@ const OrderManagement = () => {
           className={`toggle-button ${view === 'unfulfilled' ? 'active' : ''}`}
           onClick={() => setView('unfulfilled')}
         >
-          Pending Orders ({unfulfilledOrders.length})
+          Active Orders ({unfulfilledOrders.length})
         </button>
         <button
           className={`toggle-button ${view === 'fulfilled' ? 'active' : ''}`}
           onClick={() => setView('fulfilled')}
         >
-          Fulfilled Orders ({fulfilledOrders.length})
+          Delivered Orders ({fulfilledOrders.length})
         </button>
       </div>
 
       {displayOrders.length === 0 ? (
         <div className="no-orders">
-          <p>No {view} orders at this time.</p>
+          <p>No {view === 'unfulfilled' ? 'active' : 'delivered'} orders at this time.</p>
         </div>
       ) : (
         <div className="orders-section">
@@ -166,17 +167,20 @@ const OrderManagement = () => {
                   <h3>{order.name || `Order #${order.id}`}</h3>
                   <span className="order-id">ID: #{order.id}</span>
                 </div>
-                {view === 'unfulfilled' ? (
-                  <button
-                    className="fulfill-button"
-                    onClick={() => handleFulfillOrder(order.id)}
-                    disabled={processing[order.id]}
-                  >
-                    {processing[order.id] ? 'Processing...' : '✓ Fulfill Order'}
-                  </button>
-                ) : (
-                  <span className="fulfilled-badge">✓ Fulfilled</span>
-                )}
+                <div className="order-actions">
+                  <span className={`status-badge ${statusBadge(order).className}`}>
+                    {statusBadge(order).text}
+                  </span>
+                  {staffCanCancel(order) && (
+                    <button
+                      className="cancel-order-button"
+                      onClick={() => handleCancelOrder(order.id)}
+                      disabled={processing[order.id]}
+                    >
+                      {processing[order.id] ? 'Processing...' : '✕ Cancel Order'}
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="order-summary">
