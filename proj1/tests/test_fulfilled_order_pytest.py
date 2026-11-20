@@ -1,6 +1,12 @@
 """Use Case #6 -- Fulfilled Order.
 
 Needs the backend running and the seeded admin account (admin / admin123).
+
+Since Milestone 3 there is one way for an order to be fulfilled: the
+assigned driver marks it Delivered. The old staff "fulfill" button and its
+POST /api/orders/fulfillOrder endpoint are gone, because they marked orders
+done without a driver ever touching them and skipped the earnings credit.
+"Fulfilled" in the order lists now means status Delivered.
 """
 
 import pytest
@@ -8,6 +14,7 @@ import pytest
 from api_helpers import (
     api_request,
     admin_token,
+    deliver_order,
     register_and_login,
     require_backend,
 )
@@ -32,32 +39,23 @@ def get_in_stock_food(token):
 
 
 def create_order(token, food, name):
-    payload = {
-        "name": name,
-        "foods": [{"id": food["id"]}],
-        "isFulfilled": False,
-        "cost": round(food["price"] * 1.3, 2),
-        "status": "Placed",
-        "deliveryCost": round(food["price"] * 0.3, 2),
-    }
+    payload = {"name": name, "foods": [{"id": food["id"]}]}
     status, body = api_request("POST", "/api/orders", payload, token=token)
     assert status == 200, body
     return body
 
 
-def test_fulfilling_an_order_updates_status_and_both_order_lists(admin):
-    """This proves the main success scenario and both stated postconditions:
-    fulfilling an order marks it fulfilled, and it then appears in both
-    /api/orders/fulfilledOrders and the owning customer's /my/fulfilled."""
+def test_a_delivered_order_shows_up_in_both_fulfilled_lists(admin):
+    """This proves the main success scenario: once the driver delivers an
+    order it is fulfilled, and it appears in /api/orders/fulfilledOrders and
+    in the owning customer's /my/fulfilled."""
     customer, customer_token = register_and_login("customer", "fulfill_customer")
     food = get_in_stock_food(customer_token)
-    order = create_order(customer_token, food, "UC6 Pytest Order")
+    order = create_order(customer_token, food, "UC6 Fulfill Order")
 
-    fulfill_status, fulfill_body = api_request(
-        "POST", "/api/orders/fulfillOrder", order, token=admin
-    )
-    assert fulfill_status == 200, fulfill_body
-    assert fulfill_body["isFulfilled"] is True, fulfill_body
+    delivered = deliver_order(order["id"])
+    assert delivered["status"] == "Delivered", delivered
+    assert delivered["isFulfilled"] is True, delivered
 
     all_fulfilled_status, all_fulfilled = api_request(
         "GET", "/api/orders/fulfilledOrders", token=admin
@@ -72,29 +70,57 @@ def test_fulfilling_an_order_updates_status_and_both_order_lists(admin):
     assert any(o["id"] == order["id"] for o in my_fulfilled), my_fulfilled
 
 
-def test_fulfilling_a_nonexistent_order_returns_412():
-    """This proves extension 2a: an unknown order id is rejected with 412, not 200."""
-    _, staff = register_and_login("staff", "fulfill_staff_notfound")
+def test_an_undelivered_order_is_not_in_the_fulfilled_list(admin):
+    """A placed order is in the unfulfilled list and not the fulfilled one."""
+    _, customer_token = register_and_login("customer", "unfulfilled_customer")
+    food = get_in_stock_food(customer_token)
+    order = create_order(customer_token, food, "UC6 Still Placed Order")
+
+    _, fulfilled = api_request("GET", "/api/orders/fulfilledOrders", token=admin)
+    _, unfulfilled = api_request("GET", "/api/orders/unfulfilledOrders", token=admin)
+
+    assert all(o["id"] != order["id"] for o in fulfilled), fulfilled
+    assert any(o["id"] == order["id"] for o in unfulfilled), unfulfilled
+
+
+def test_staff_can_no_longer_fulfill_an_order_directly(admin):
+    """Extension 2a used to be "nonexistent order -> 412". The staff fulfill
+    endpoint itself is gone, so any call to it is refused and the order is
+    left untouched."""
+    _, customer_token = register_and_login("customer", "fulfill_removed_customer")
+    food = get_in_stock_food(customer_token)
+    order = create_order(customer_token, food, "UC6 No Staff Fulfill Order")
 
     status, body = api_request(
-        "POST", "/api/orders/fulfillOrder", {"id": 999999999}, token=staff
+        "POST", "/api/orders/fulfillOrder", {"id": order["id"]}, token=admin
     )
 
-    assert status == 412, body
+    # The old path now falls through to POST /api/orders/{id}, where
+    # "fulfillOrder" isn't a valid id, so it is a 400 rather than a 404.
+    assert status in (400, 404, 405), (status, body)
+    _, after = api_request("GET", f"/api/orders/{order['id']}", token=admin)
+    assert after["status"] == "Placed", after
 
 
-def test_fulfilling_an_already_fulfilled_order_returns_410(admin):
-    """This proves extension 2b: fulfilling an already-fulfilled order is rejected with 410."""
-    customer, customer_token = register_and_login("customer", "fulfill_customer_two")
+def test_delivering_an_already_delivered_order_is_a_conflict():
+    """Extension 2b: finishing an order that is already finished is refused.
+    It was a 410 from the staff endpoint; the state machine answers 409."""
+    _, customer_token = register_and_login("customer", "fulfill_customer_two")
+    driver, driver_token = register_and_login("driver", "fulfill_twice_driver")
     food = get_in_stock_food(customer_token)
     order = create_order(customer_token, food, "UC6 Already Fulfilled Order")
 
-    first_status, first_body = api_request(
-        "POST", "/api/orders/fulfillOrder", order, token=admin
-    )
-    assert first_status == 200, first_body
+    assert api_request("POST", f"/api/orders/{order['id']}/claim", token=driver_token)[0] == 200
+    for step in ("Picked Up", "Delivered"):
+        step_status, step_body = api_request(
+            "POST", f"/api/orders/{order['id']}",
+            {"status": step, "username": driver["username"]}, token=driver_token,
+        )
+        assert step_status == 200, step_body
 
-    second_status, second_body = api_request(
-        "POST", "/api/orders/fulfillOrder", order, token=admin
+    status, body = api_request(
+        "POST", f"/api/orders/{order['id']}",
+        {"status": "Delivered", "username": driver["username"]}, token=driver_token,
     )
-    assert second_status == 410, second_body
+
+    assert status == 409, body
