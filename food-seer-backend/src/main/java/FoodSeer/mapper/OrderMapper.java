@@ -69,32 +69,4 @@ public class OrderMapper {
 
         return dto;
     }
-
-    /**
-     * Converts an OrderDto to an Order entity.
-     *
-     * @param orderDto the OrderDto to convert
-     * @return the corresponding Order entity
-     */
-    public static Order mapToOrder(final OrderDto orderDto) {
-        final Order order = new Order(orderDto.getId(), orderDto.getName());
-
-        // Map FoodDto objects to Food entities
-        order.setFoods(orderDto.getFoods().stream()
-                .map(food -> new Food(
-                        food.getFoodName(),
-                        food.getAmount(),
-                        food.getPrice(),
-                        food.getAllergies()))
-                .collect(Collectors.toList()));
-
-
-        order.setDriver(orderDto.getDriverStats());
-        order.setDeliveryCost(orderDto.getDeliveryCost());
-        
-        // Note: We do NOT map ratedFoodIds back here.
-        // The service layer handles adding IDs to the history one by one.
-        
-        return order;
-    }
 }

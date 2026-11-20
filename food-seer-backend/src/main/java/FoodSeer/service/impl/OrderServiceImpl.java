@@ -4,31 +4,21 @@ import FoodSeer.constant.OrderStatus;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
-import FoodSeer.dto.DriverStatsDto;
-import FoodSeer.entity.DriverStats;
-import FoodSeer.mapper.DriverStatsMapper;
-import FoodSeer.service.AllergyHandoffService;
-import FoodSeer.service.DriverStatsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import FoodSeer.dto.InventoryDto;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Order;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.mapper.OrderMapper;
 import FoodSeer.entity.User;
-import FoodSeer.repositories.FoodRepository;
 import FoodSeer.repositories.OrderRepository;
-import FoodSeer.service.InventoryService;
 import FoodSeer.service.OrderPricing;
 import FoodSeer.service.OrderService;
 import FoodSeer.service.OrderStateMachine;
@@ -46,28 +36,14 @@ public class OrderServiceImpl implements OrderService {
             OrderStatus.PICKED_UP);
 
     Logger logger = LoggerFactory.getLogger(OrderServiceImpl.class);
-    /** Repository for food items. */
-    @Autowired
-    private FoodRepository foodRepository;
-
-    /** Repository for allergy handoff */
-    @Autowired
-    private AllergyHandoffService allergyHandoffService;
 
     /** Repository for orders. */
     @Autowired
     private OrderRepository orderRepository;
 
-    /** Inventory service for stock management. */
-    @Autowired
-    private InventoryService inventoryService;
-
     /** User service for getting current user. */
     @Autowired
     private UserService userService;
-
-    @Autowired
-    private DriverStatsService driverStatsService;
 
     /** Reserves stock when an order is placed. */
     @Autowired
@@ -149,39 +125,6 @@ public class OrderServiceImpl implements OrderService {
     public List<OrderDto> getAllOrders() {
         final List<Order> orders = orderRepository.findAll();
         return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
-    }
-
-    /**
-     * Checks if all ingredients/foods for an order item are available.
-     *
-     * @param inventoryDto The current inventory
-     * @param food         The food item to check
-     * @return true if available, false otherwise
-     */
-    private boolean checkFoodAvailability(final InventoryDto inventoryDto, final Food food) {
-        final Map<String, Food> inventoryMap = inventoryDto.getFoods().stream()
-                .collect(Collectors.toMap(Food::getFoodName, f -> f));
-
-        final Food inventoryFood = inventoryMap.get(food.getFoodName());
-        return inventoryFood != null && food.getAmount() <= inventoryFood.getAmount();
-    }
-
-    /**
-     * Deducts the ordered food amount from the inventory.
-     *
-     * @param inventoryDto The inventory data
-     * @param food         The food item to deduct
-     */
-    private void updateInventory(final InventoryDto inventoryDto, final Food food) {
-        final Map<String, Food> inventoryMap = inventoryDto.getFoods().stream()
-                .collect(Collectors.toMap(Food::getFoodName, f -> f));
-
-        final Food inventoryFood = inventoryMap.get(food.getFoodName());
-        if (inventoryFood != null) {
-            inventoryFood.setAmount(inventoryFood.getAmount() - food.getAmount());
-        }
-
-        inventoryService.updateInventory(inventoryDto);
     }
 
     /**

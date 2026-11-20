@@ -57,33 +57,6 @@ public class OrderMapperTest {
 
 
     @Test
-    public void testMapToOrder_Complete() {
-        orderDto = new OrderDto(1L, "DTO Order");
-        orderDto.setDeliveryCost(new BigDecimal("4.50"));
-        orderDto.setFoods(foods);
-
-        DriverStats driverStats = new DriverStats();
-        orderDto.setDriverStats(driverStats);
-
-        Order mappedOrder = OrderMapper.mapToOrder(orderDto);
-
-        // Basic fields
-        assertNotNull(mappedOrder);
-        assertEquals(orderDto.getId(), mappedOrder.getId());
-        assertEquals(orderDto.getName(), mappedOrder.getName());
-        // isFulfilled isn't copied any more: it's derived from the status.
-        assertFalse(mappedOrder.getIsFulfilled());
-        assertEquals(orderDto.getDeliveryCost(), mappedOrder.getDeliveryCost());
-        assertEquals(driverStats, mappedOrder.getDriver());
-
-        // Foods mapping
-        assertNotNull(mappedOrder.getFoods());
-        assertEquals(2, mappedOrder.getFoods().size());
-        assertEquals("PIZZA", mappedOrder.getFoods().get(0).getFoodName());
-        assertEquals("BURGER", mappedOrder.getFoods().get(1).getFoodName());
-    }
-
-    @Test
     public void testMapToOrderDto_EdgeCases() {
         // Empty foods list
         order.setFoods(new ArrayList<>());
