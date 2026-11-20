@@ -1,5 +1,6 @@
 package FoodSeer.repositories;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,6 +12,11 @@ import FoodSeer.entity.Food;
 import jakarta.persistence.LockModeType;
 
 public interface FoodRepository extends JpaRepository<Food, Long> {
+
+    /**
+     * @return foods still on the menu (not deleted)
+     */
+    List<Food> findByActiveTrue ();
 
     /**
      * Loads a food and locks its row until the transaction ends, so two orders

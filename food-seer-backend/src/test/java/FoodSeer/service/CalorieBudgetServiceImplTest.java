@@ -334,7 +334,7 @@ class CalorieBudgetServiceImplTest {
         final Food a = new Food("A", 1, 1, List.of());
         a.setCalories(100);
         final Food b = new Food("B", 1, 1, List.of());
-        when(foodRepository.findAll()).thenReturn(List.of(a, b));
+        when(foodRepository.findByActiveTrue()).thenReturn(List.of(a, b));
 
         final FoodRecommendationDto result = calorieBudgetService.getRecommendedFoodsFor(u);
 
@@ -363,7 +363,7 @@ class CalorieBudgetServiceImplTest {
         final Food tooMany = new Food("FEAST", 1, 1, List.of());
         tooMany.setCalories(900);
         final Food untagged = new Food("MYSTERY", 1, 1, List.of());
-        when(foodRepository.findAll()).thenReturn(List.of(fits, tooMany, untagged));
+        when(foodRepository.findByActiveTrue()).thenReturn(List.of(fits, tooMany, untagged));
 
         final FoodRecommendationDto result = calorieBudgetService.getRecommendedFoodsFor(u);
 

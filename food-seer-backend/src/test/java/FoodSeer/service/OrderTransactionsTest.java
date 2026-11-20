@@ -1,9 +1,11 @@
 package FoodSeer.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -29,6 +31,7 @@ import FoodSeer.entity.Food;
 import FoodSeer.entity.User;
 import FoodSeer.repositories.DriverStatsRepository;
 import FoodSeer.repositories.FoodRepository;
+import FoodSeer.repositories.IncidentRepository;
 import FoodSeer.repositories.OrderRepository;
 import FoodSeer.repositories.UserRepository;
 
@@ -49,6 +52,12 @@ class OrderTransactionsTest {
     private UserRepository userRepository;
     @Autowired
     private DriverStatsRepository driverStatsRepository;
+    @Autowired
+    private FoodService foodService;
+    @Autowired
+    private TraceService traceService;
+    @Autowired
+    private IncidentRepository incidentRepository;
 
     private final List<Long> foodIds = new ArrayList<>();
     private User customer;
@@ -64,6 +73,8 @@ class OrderTransactionsTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+        incidentRepository.deleteAll(incidentRepository.findAll().stream()
+                .filter(i -> "txn_customer".equals(i.getReporterUsername())).toList());
         orderRepository.deleteAll(orderRepository.findByUser(customer));
         for (final String name : new String[] { "race_driver_a", "race_driver_b" }) {
             driverStatsRepository.findByUsername(name).ifPresent(driverStatsRepository::delete);
@@ -125,6 +136,38 @@ class OrderTransactionsTest {
         assertEquals(OrderStatus.CANCELLED, orderRepository.findById(id).orElseThrow().getStatus());
         assertThrows(IllegalStateException.class, () -> orderService.cancelOrder(id));
         assertEquals(5, foodRepository.findById(coffee.getId()).orElseThrow().getAmount(), "released only once");
+    }
+
+    /**
+     * Acceptance criterion: after a food is deleted, trace-back still finds
+     * the past orders that contained it, and the order still lists it.
+     */
+    @Test
+    void traceBackStillFindsOrdersAfterTheirFoodIsDeleted() {
+        final Food satay = food("TXN SATAY", 5);
+        final OrderDto placed = new OrderDto(null, "Satay night");
+        placed.setFoods(List.of(ref(satay)));
+        final Long orderId = orderService.createOrder(placed).getId();
+
+        foodService.deleteFood(satay.getId());
+
+        assertFalse(foodService.getAllFoods().stream().anyMatch(f -> f.getId().equals(satay.getId())),
+                "a deleted food is off the menu");
+        final TraceResult result = traceService.reportRestaurantIncident("txn_customer", "PEANUTS",
+                List.of(satay.getId()), LocalDateTime.now().minusHours(1), LocalDateTime.now().plusHours(1));
+        assertTrue(result.getExposedOrderIds().contains(orderId));
+        assertEquals("TXN SATAY", orderService.getOrderById(orderId).getFoods().get(0).getFoodName());
+    }
+
+    @Test
+    void aDeletedFoodCantBeOrdered() {
+        final Food gone = food("TXN GONE", 5);
+        foodService.deleteFood(gone.getId());
+        final OrderDto order = new OrderDto(null, "Too late");
+        order.setFoods(List.of(ref(gone)));
+
+        assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(order));
+        assertEquals(5, foodRepository.findById(gone.getId()).orElseThrow().getAmount());
     }
 
     private void driver(final String name) {

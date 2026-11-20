@@ -152,7 +152,7 @@ public class CalorieBudgetServiceImpl implements CalorieBudgetService {
         // reuse the same budget computation used for the standalone budget endpoint
         final CalorieBudgetDto budget = getBudgetFor(user);
         // the full catalog, to filter down from
-        final List<Food> allFoods = foodRepository.findAll();
+        final List<Food> allFoods = foodRepository.findByActiveTrue();
 
         // if we don't have a real number to filter by, don't guess - show everything instead
         if (budget.remainingCalories() == null) {

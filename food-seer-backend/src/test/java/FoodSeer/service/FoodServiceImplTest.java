@@ -127,10 +127,10 @@ public class FoodServiceImplTest {
         // Perform delete
         foodService.deleteFood(created.getId());
 
-        // Now food should be gone
-        assertThrows(ResourceNotFoundException.class, () ->
-                foodService.getFoodById(created.getId())
-        );
+        // Milestone 3: deleting is a soft delete. The food leaves the menu but
+        // its row stays, so past orders and allergy trace-back still find it.
+        assertTrue(foodService.getAllFoods().stream().noneMatch(f -> f.getId().equals(created.getId())));
+        assertNotNull(foodService.getFoodById(created.getId()));
     }
 
     @Test

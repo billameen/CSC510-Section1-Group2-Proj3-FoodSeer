@@ -73,7 +73,11 @@ public class InventoryServiceImpl implements InventoryService {
             return createInventory(newInventoryDto);
         }
 
-        return InventoryMapper.mapToInventoryDto(inventoryList.get(0));
+        // Deleted foods aren't part of the inventory anyone sees.
+        final InventoryDto inventory = InventoryMapper.mapToInventoryDto(inventoryList.get(0));
+        inventory.setFoods(inventory.getFoods().stream().filter(Food::isActive)
+                .collect(java.util.stream.Collectors.toList()));
+        return inventory;
     }
 
     /**

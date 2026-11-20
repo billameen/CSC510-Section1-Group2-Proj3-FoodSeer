@@ -110,6 +110,7 @@ public class OrderServiceImpl implements OrderService {
      * @throws ResourceNotFoundException if the order doesn't exist
      */
     @Override
+    @Transactional(readOnly = true)
     public OrderDto getOrderById(final Long orderId) {
         final Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order does not exist with id " + orderId));
@@ -122,6 +123,7 @@ public class OrderServiceImpl implements OrderService {
      * @return all the orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAllOrders() {
         final List<Order> orders = orderRepository.findAll();
         return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
@@ -133,6 +135,7 @@ public class OrderServiceImpl implements OrderService {
      * @return list of fulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAllFulfilledOrders() {
         return map(orderRepository.findByStatus(OrderStatus.DELIVERED));
     }
@@ -143,6 +146,7 @@ public class OrderServiceImpl implements OrderService {
      * @return list of unfulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAllUnfulfilledOrders() {
         return map(orderRepository.findByStatusIn(ACTIVE));
     }
@@ -153,6 +157,7 @@ public class OrderServiceImpl implements OrderService {
      * @return list of current user's orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getCurrentUserOrders() {
         final User currentUser = userService.getCurrentUser();
         if (currentUser == null) {
@@ -169,6 +174,7 @@ public class OrderServiceImpl implements OrderService {
      * @return list of current user's fulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getCurrentUserFulfilledOrders() {
         final User currentUser = userService.getCurrentUser();
         if (currentUser == null) {
@@ -185,6 +191,7 @@ public class OrderServiceImpl implements OrderService {
      * @return list of current user's unfulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getCurrentUserUnfulfilledOrders() {
         final User currentUser = userService.getCurrentUser();
         if (currentUser == null) {
@@ -246,12 +253,14 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAvailableOrders(){
         List<Order> availableOrders = orderRepository.findByStatus(OrderStatus.PLACED);
         return availableOrders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getActiveOrders(String username) {
         List<Order> activeOrders =
             orderRepository.findByDriverUsernameAndStatusIn(

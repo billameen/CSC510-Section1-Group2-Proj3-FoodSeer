@@ -64,6 +64,9 @@ public class StockService {
         for ( final Map.Entry<Long, Integer> line : wanted.entrySet() ) {
             final Food food = foods.findByIdForUpdate( line.getKey() ).orElseThrow(
                     () -> new ResourceNotFoundException( "Food " + line.getKey() + " does not exist." ) );
+            if ( !food.isActive() ) {
+                throw new IllegalArgumentException( food.getFoodName() + " is no longer on the menu." );
+            }
             if ( food.getAmount() < line.getValue() ) {
                 throw new IllegalArgumentException( "Not enough " + food.getFoodName() + " in stock: you asked for "
                         + line.getValue() + ", " + food.getAmount() + " left." );

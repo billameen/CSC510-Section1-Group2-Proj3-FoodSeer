@@ -44,7 +44,7 @@ public class ChatServiceImplTest {
 
         ChatResponseDto res = chatService.sendMessage(req);
 
-        verify(foodRepository, never()).findAll();  // should not call DB
+        verify(foodRepository, never()).findByActiveTrue();  // should not call DB
         assertNotNull(res);
         String resp = extractResponse(res);
         assertNotNull(resp);
@@ -55,11 +55,11 @@ public class ChatServiceImplTest {
         ChatRequestDto req = new ChatRequestDto();
         req.setMessage("Can you recommend food?");
 
-        when(foodRepository.findAll()).thenReturn(Collections.emptyList());
+        when(foodRepository.findByActiveTrue()).thenReturn(Collections.emptyList());
 
         ChatResponseDto res = chatService.sendMessage(req);
 
-        verify(foodRepository, times(1)).findAll(); // should call DB
+        verify(foodRepository, times(1)).findByActiveTrue(); // should call DB
         assertNotNull(res);
         String resp = extractResponse(res);
         assertNotNull(resp);
@@ -77,7 +77,7 @@ public class ChatServiceImplTest {
         f2.setPrice(5); // use int
         f2.setAllergies(Collections.emptyList());
 
-        when(foodRepository.findAll()).thenReturn(List.of(f1, f2));
+        when(foodRepository.findByActiveTrue()).thenReturn(List.of(f1, f2));
 
         ChatRequestDto req = new ChatRequestDto();
         req.setMessage("recommend food");
@@ -95,7 +95,7 @@ public class ChatServiceImplTest {
         req.setMessage("Cause error");
 
         // Force exception inside repo
-        when(foodRepository.findAll()).thenThrow(new RuntimeException("DB error"));
+        when(foodRepository.findByActiveTrue()).thenThrow(new RuntimeException("DB error"));
 
         ChatResponseDto res = chatService.sendMessage(req);
 
