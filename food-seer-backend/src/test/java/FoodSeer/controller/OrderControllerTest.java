@@ -22,6 +22,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import FoodSeer.TestUtils;
 import FoodSeer.dto.InventoryDto;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.Food;
@@ -140,7 +143,7 @@ class OrderControllerTest {
 
         final NewOrderRequest orderDto = NewOrderRequest.of("Order1", TestUtils.foodIds(foods.subList(0, 2))); // use some foods
 
-        final OrderDto savedOrder = orderService.createOrder(orderDto);
+        final OrderDto savedOrder = placeAsCustomer(orderDto);
 
         // Changed in Milestone 2: a customer may no longer list every order
         // (that exposed other customers' allergies). Staff/admin only.
@@ -191,7 +194,7 @@ class OrderControllerTest {
         final List<Food> foods = foodRepository.findAll();
         final NewOrderRequest orderDto = NewOrderRequest.of("Order3", TestUtils.foodIds(foods.subList(1, 3)));
 
-        orderService.createOrder(orderDto);
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/unfulfilledOrders"))
                 .andExpect(status().isOk());
@@ -294,7 +297,7 @@ class OrderControllerTest {
         Food food = foodRepository.findAll().get(0);
 
         NewOrderRequest orderDto = NewOrderRequest.of("MyOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
-        orderService.createOrder(orderDto);
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/my"))
                 .andExpect(status().isOk());
@@ -309,7 +312,7 @@ class OrderControllerTest {
         Food food = foodRepository.findAll().get(0);
 
         NewOrderRequest orderDto = NewOrderRequest.of("FulfilledOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
-        OrderDto savedOrder = orderService.createOrder(orderDto);
+        OrderDto savedOrder = placeAsCustomer(orderDto);
 
         // Mark fulfilled
         var entity = orderRepository.findById(savedOrder.getId()).get();
@@ -329,7 +332,7 @@ class OrderControllerTest {
         Food food = foodRepository.findAll().get(0);
 
         NewOrderRequest orderDto = NewOrderRequest.of("UnfulfilledOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
-        orderService.createOrder(orderDto);
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/my/unfulfilled"))
                 .andExpect(status().isOk());
@@ -343,7 +346,7 @@ class OrderControllerTest {
     void testGetAvailableOrders() throws Exception {
         final List<Food> foods = foodRepository.findAll();
         final NewOrderRequest orderDto = NewOrderRequest.of("AvailableOrderTest", TestUtils.foodIds(foods.subList(0, 1)));
-        orderService.createOrder(orderDto);
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/availableOrders"))
                 .andExpect(status().isOk());
@@ -355,7 +358,7 @@ class OrderControllerTest {
     void testGetActiveOrders_ForDriver() throws Exception {
         final List<Food> foods = foodRepository.findAll();
         final NewOrderRequest orderDto = NewOrderRequest.of("ActiveOrderTest", TestUtils.foodIds(foods.subList(0, 1)));
-        final OrderDto saved = orderService.createOrder(orderDto);
+        final OrderDto saved = placeAsCustomer(orderDto);
         orderService.claimOrder(saved.getId());
 
         // Mark order as picked up by driver via service so it appears as active
@@ -371,7 +374,7 @@ class OrderControllerTest {
     void testUpdateOrderStatus_AsDriver() throws Exception {
         final List<Food> foods = foodRepository.findAll();
         final NewOrderRequest orderDto = NewOrderRequest.of("UpdateStatusTest", TestUtils.foodIds(foods.subList(0, 1)));
-        final OrderDto saved = orderService.createOrder(orderDto);
+        final OrderDto saved = placeAsCustomer(orderDto);
         orderService.claimOrder(saved.getId());
 
         // Send update payload (username + status)
@@ -381,5 +384,20 @@ class OrderControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * Places a setup order as the test customer, since only customers can
+     * place orders, then restores whoever the test is signed in as.
+     */
+    private OrderDto placeAsCustomer(final NewOrderRequest request) {
+        final var previous = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("customer",
+                    null, List.of(new SimpleGrantedAuthority("ROLE_CUSTOMER"))));
+            return orderService.createOrder(request);
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(previous);
+        }
     }
 }

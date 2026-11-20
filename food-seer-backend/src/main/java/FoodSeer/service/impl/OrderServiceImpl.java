@@ -1,6 +1,7 @@
 package FoodSeer.service.impl;
 
 import FoodSeer.constant.OrderStatus;
+import FoodSeer.constant.UserRole;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -74,6 +75,10 @@ public class OrderServiceImpl implements OrderService {
         final User currentUser = userService.getCurrentUser();
         if (currentUser == null) {
             throw new IllegalStateException("No authenticated user found");
+        }
+        // Same rule as the controller's @PreAuthorize, so the service is safe on its own.
+        if (UserRole.fromAuthority(currentUser.getRole()) != UserRole.CUSTOMER) {
+            throw new SecurityException("Only customers can place orders.");
         }
 
         // Validates every line, then decrements; prices come from the menu.
