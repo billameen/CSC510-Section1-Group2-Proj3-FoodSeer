@@ -185,6 +185,26 @@ class CalorieBudgetServiceImplTest {
         assertEquals(1200, budget.remainingCalories());
     }
 
+    /** A cancelled order was never eaten, so it doesn't count toward today or the history. */
+    @Test
+    void cancelledOrdersDontCountTowardCalories() {
+        final User u = user("cancel_user");
+        u.setDailyCalorieGoal(2000);
+        when(fitnessDataService.getTodaysFitnessData("cancel_user"))
+                .thenReturn(Optional.of(new FitnessData("cancel_user", "2026-10-14", 0, 0, 0)));
+        final Food food = new Food("BURGER", 5, 10, List.of());
+        food.setCalories(600);
+        final Order cancelled = new Order(5L, "changed my mind");
+        cancelled.setFoods(List.of(food));
+        cancelled.setCreatedAt(LocalDateTime.now());
+        cancelled.setStatus(FoodSeer.constant.OrderStatus.CANCELLED);
+        when(orderRepository.findByUser(u)).thenReturn(List.of(cancelled));
+
+        assertEquals(0, calorieBudgetService.getBudgetFor(u).caloriesConsumedToday());
+        assertTrue(calorieBudgetService.getConsumptionHistory(u).stream()
+                .allMatch(day -> day.caloriesConsumed() == 0));
+    }
+
     /**
      * Only orders placed today should count toward today's consumption - an
      * order from yesterday, even with real calorie data, must be excluded.

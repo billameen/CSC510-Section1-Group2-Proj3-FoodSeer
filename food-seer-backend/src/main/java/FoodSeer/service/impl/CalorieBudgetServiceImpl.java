@@ -32,6 +32,7 @@ import FoodSeer.dto.FoodRecommendationDto;
 import FoodSeer.dto.MealLogEntryDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.MealLog;
+import FoodSeer.constant.OrderStatus;
 import FoodSeer.entity.Order;
 import FoodSeer.entity.User;
 // converts Food entities to FoodDto for the response
@@ -210,6 +211,10 @@ public class CalorieBudgetServiceImpl implements CalorieBudgetService {
             if (createdAt == null) {
                 continue;
             }
+            // a cancelled order was never eaten
+            if (order.getStatus() == OrderStatus.CANCELLED) {
+                continue;
+            }
             // createdAt is already in the server's local time, so take its calendar date
             final LocalDate orderDate = createdAt.toLocalDate();
             // only orders placed today count toward today's consumption
@@ -248,6 +253,10 @@ public class CalorieBudgetServiceImpl implements CalorieBudgetService {
             final LocalDateTime createdAt = order.getCreatedAt();
             // orders from before this field existed have no date to group by - skip rather than guessing
             if (createdAt == null) {
+                continue;
+            }
+            // a cancelled order was never eaten
+            if (order.getStatus() == OrderStatus.CANCELLED) {
                 continue;
             }
             // the calendar day this order counts toward
