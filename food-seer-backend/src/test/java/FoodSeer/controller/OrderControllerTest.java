@@ -4,6 +4,7 @@ import FoodSeer.constant.OrderStatus;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import FoodSeer.TestUtils;
 import FoodSeer.dto.InventoryDto;
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.User;
@@ -136,8 +138,7 @@ class OrderControllerTest {
     void testGetAndCreateOrder() throws Exception {
         final List<Food> foods = foodRepository.findAll();
 
-        final OrderDto orderDto = new OrderDto(0L, "Order1");
-        orderDto.setFoods(foods.subList(0, 2)); // use some foods
+        final NewOrderRequest orderDto = NewOrderRequest.of("Order1", TestUtils.foodIds(foods.subList(0, 2))); // use some foods
 
         final OrderDto savedOrder = orderService.createOrder(orderDto);
 
@@ -188,13 +189,30 @@ class OrderControllerTest {
     @WithMockUser(username = "staff", roles = "STAFF")
     void testGetUnfulfilledOrders() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "Order3");
-        orderDto.setFoods(foods.subList(1, 3));
+        final NewOrderRequest orderDto = NewOrderRequest.of("Order3", TestUtils.foodIds(foods.subList(1, 3)));
 
         orderService.createOrder(orderDto);
 
         mvc.perform(get("/api/orders/unfulfilledOrders"))
                 .andExpect(status().isOk());
+    }
+
+    /** Extra fields an old client might still send are ignored, not trusted. */
+    @Test
+    @Transactional
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testForgedPriceAndStatusInTheRequestAreIgnored() throws Exception {
+        final Food food = foodRepository.findAll().get(0);
+
+        mvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Forged\",\"cost\":0.01,\"deliveryCost\":0,\"status\":\"Delivered\","
+                                + "\"isFulfilled\":true,\"foods\":[{\"id\":" + food.getId() + ",\"price\":0}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("Placed"))
+                .andExpect(jsonPath("$.isFulfilled").value(false))
+                .andExpect(jsonPath("$.foods[0].price").value(food.getPrice()))
+                .andExpect(jsonPath("$.foods[0].foodName").value(food.getFoodName()));
     }
 
     @Test
@@ -275,8 +293,7 @@ class OrderControllerTest {
         // Create an order for the customer user
         Food food = foodRepository.findAll().get(0);
 
-        OrderDto orderDto = new OrderDto(0L, "MyOrderTest");
-        orderDto.setFoods(new ArrayList<>(List.of(food)));
+        NewOrderRequest orderDto = NewOrderRequest.of("MyOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
         orderService.createOrder(orderDto);
 
         mvc.perform(get("/api/orders/my"))
@@ -291,8 +308,7 @@ class OrderControllerTest {
         // Create order
         Food food = foodRepository.findAll().get(0);
 
-        OrderDto orderDto = new OrderDto(0L, "FulfilledOrderTest");
-        orderDto.setFoods(new ArrayList<>(List.of(food)));
+        NewOrderRequest orderDto = NewOrderRequest.of("FulfilledOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
         OrderDto savedOrder = orderService.createOrder(orderDto);
 
         // Mark fulfilled
@@ -312,8 +328,7 @@ class OrderControllerTest {
         // Create order (not fulfilled)
         Food food = foodRepository.findAll().get(0);
 
-        OrderDto orderDto = new OrderDto(0L, "UnfulfilledOrderTest");
-        orderDto.setFoods(new ArrayList<>(List.of(food)));
+        NewOrderRequest orderDto = NewOrderRequest.of("UnfulfilledOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
         orderService.createOrder(orderDto);
 
         mvc.perform(get("/api/orders/my/unfulfilled"))
@@ -327,8 +342,7 @@ class OrderControllerTest {
     @WithMockUser(username = "driver", roles = "DRIVER")
     void testGetAvailableOrders() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "AvailableOrderTest");
-        orderDto.setFoods(foods.subList(0, 1));
+        final NewOrderRequest orderDto = NewOrderRequest.of("AvailableOrderTest", TestUtils.foodIds(foods.subList(0, 1)));
         orderService.createOrder(orderDto);
 
         mvc.perform(get("/api/orders/availableOrders"))
@@ -340,9 +354,7 @@ class OrderControllerTest {
     @WithMockUser(username = "driver", roles = "DRIVER")
     void testGetActiveOrders_ForDriver() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "ActiveOrderTest");
-        orderDto.setStatus("Placed");
-        orderDto.setFoods(foods.subList(0, 1));
+        final NewOrderRequest orderDto = NewOrderRequest.of("ActiveOrderTest", TestUtils.foodIds(foods.subList(0, 1)));
         final OrderDto saved = orderService.createOrder(orderDto);
         orderService.claimOrder(saved.getId());
 
@@ -358,9 +370,7 @@ class OrderControllerTest {
     @WithMockUser(username = "driver", roles = "DRIVER")
     void testUpdateOrderStatus_AsDriver() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "UpdateStatusTest");
-        orderDto.setStatus("Placed");
-        orderDto.setFoods(foods.subList(0, 1));
+        final NewOrderRequest orderDto = NewOrderRequest.of("UpdateStatusTest", TestUtils.foodIds(foods.subList(0, 1)));
         final OrderDto saved = orderService.createOrder(orderDto);
         orderService.claimOrder(saved.getId());
 

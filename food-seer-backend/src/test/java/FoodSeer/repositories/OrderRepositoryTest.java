@@ -17,6 +17,8 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.transaction.annotation.Transactional;
 
 import FoodSeer.dto.InventoryDto;
+import FoodSeer.TestUtils;
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.User;
@@ -105,8 +107,7 @@ class OrderRepositoryTest {
         final List<Food> foods = foodRepository.findAll();
 
         // Create an order with a subset of foods
-        final OrderDto orderDto = new OrderDto(0L, "Order1");
-        orderDto.setFoods(foods.subList(0, 2));
+        final NewOrderRequest orderDto = NewOrderRequest.of("Order1", TestUtils.foodIds(foods.subList(0, 2)));
 
         final OrderDto savedOrder = orderService.createOrder(orderDto);
 
@@ -126,8 +127,7 @@ class OrderRepositoryTest {
         final List<Food> foods = foodRepository.findAll();
 
         // Create an order that includes the first food item
-        final OrderDto orderDto = new OrderDto(0L, "OrderWithCoffee");
-        orderDto.setFoods(List.of(foods.get(0))); // COFFEE
+        final NewOrderRequest orderDto = NewOrderRequest.of("OrderWithCoffee", TestUtils.foodIds(List.of(foods.get(0)))); // COFFEE
 
         final OrderDto savedOrder = orderService.createOrder(orderDto);
 

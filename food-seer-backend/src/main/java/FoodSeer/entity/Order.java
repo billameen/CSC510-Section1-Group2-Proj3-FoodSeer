@@ -37,6 +37,16 @@ public class Order {
     @ManyToMany
     private List<Food> foods = new ArrayList<>();
 
+    /**
+     * What each unit was when the order was placed (name, price, allergens).
+     * Shown in order history, so later menu edits don't rewrite it. Orders
+     * placed before Milestone 3 have none and fall back to the foods above.
+     */
+    @ElementCollection
+    @CollectionTable(name = "order_lines", joinColumns = @JoinColumn(name = "order_id"))
+    @OrderColumn(name = "line_index")
+    private List<OrderLine> lines = new ArrayList<>();
+
     /** Boolean used to track if the order has been fulfilled */
     /**
      * Kept as a column because existing databases have it as NOT NULL, but it
@@ -190,6 +200,20 @@ public class Order {
      */
     public void setFoods(final List<Food> foods) {
         this.foods = foods;
+    }
+
+    /**
+     * @return the snapshot of each unit at order time (empty for old orders)
+     */
+    public List<OrderLine> getLines() {
+        return lines;
+    }
+
+    /**
+     * @param lines the snapshot of each unit at order time
+     */
+    public void setLines(final List<OrderLine> lines) {
+        this.lines = lines;
     }
 
     /**

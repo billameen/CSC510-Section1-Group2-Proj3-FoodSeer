@@ -19,6 +19,8 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.ArgumentCaptor;
 
+import FoodSeer.TestUtils;
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.dto.DriverStatsDto;
 import FoodSeer.entity.Order;
@@ -69,8 +71,7 @@ class OrderServiceImplTest {
 
     @Test
     void createOrder_whenNoAuthenticatedUser_throwsBeforeReservingStock() {
-        OrderDto dto = new OrderDto(null, "Lunch");
-        dto.setFoods(List.of(food(5L, "COFFEE", 3)));
+        NewOrderRequest dto = NewOrderRequest.of("Lunch", TestUtils.foodIds(List.of(food(5L, "COFFEE", 3))));
         when(userService.getCurrentUser()).thenReturn(null);
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> orderService.createOrder(dto));
@@ -80,8 +81,7 @@ class OrderServiceImplTest {
 
     @Test
     void createOrder_success_reservesStockAndReturnsMappedDto() {
-        OrderDto request = new OrderDto(null, "MyOrder");
-        request.setFoods(List.of(food(5L, null, 0)));
+        NewOrderRequest request = NewOrderRequest.of("MyOrder", TestUtils.foodIds(List.of(food(5L, null, 0))));
         Food managedFood = food(5L, "COFFEE", 3);
         when(stockService.reserve(List.of(5L))).thenReturn(List.of(managedFood));
         User currentUser = new User();
@@ -103,17 +103,17 @@ class OrderServiceImplTest {
 
     @Test
     void createOrder_rejectsAnEmptyOrder() {
-        OrderDto dto = new OrderDto(null, "Nothing");
+        NewOrderRequest dto = NewOrderRequest.of("Nothing", List.of());
 
         assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(dto));
+        assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(new NewOrderRequest("x", null)));
         verify(orderRepository, never()).save(any(Order.class));
         verifyNoInteractions(stockService);
     }
 
     @Test
     void createOrder_whenStockIsShort_savesNothing() {
-        OrderDto dto = new OrderDto(null, "Too much");
-        dto.setFoods(List.of(food(5L, null, 0)));
+        NewOrderRequest dto = NewOrderRequest.of("Too much", TestUtils.foodIds(List.of(food(5L, null, 0))));
         User currentUser = new User();
         currentUser.setUsername("customer");
         when(userService.getCurrentUser()).thenReturn(currentUser);
@@ -137,12 +137,10 @@ class OrderServiceImplTest {
         when(userService.getCurrentUser()).thenReturn(currentUser);
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // Two burgers and a tea, with a forged price, delivery fee and status.
-        OrderDto request = new OrderDto(null, "Cheap lunch");
-        request.setFoods(List.of(food(1L, null, 0), food(1L, null, 0), food(2L, null, 0)));
-        request.setCost(new BigDecimal("0.01"));
-        request.setDeliveryCost(BigDecimal.ZERO);
-        request.setStatus("Delivered");
+        // Two burgers and a tea. The request type has no price, delivery fee
+        // or status at all, so there is nothing to forge (see the JSON test
+        // in OrderControllerTest for a request that tries anyway).
+        NewOrderRequest request = NewOrderRequest.of("Cheap lunch", List.of(1L, 1L, 2L));
 
         orderService.createOrder(request);
 

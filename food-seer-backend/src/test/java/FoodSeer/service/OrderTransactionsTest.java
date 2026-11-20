@@ -25,6 +25,8 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 import FoodSeer.constant.OrderStatus;
+import FoodSeer.TestUtils;
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.DriverStats;
 import FoodSeer.entity.Food;
@@ -101,8 +103,7 @@ class OrderTransactionsTest {
     void outOfStockSecondItemRollsBackTheFirst() {
         final Food first = food("TXN FIRST", 5);
         final Food second = food("TXN SECOND", 0);
-        final OrderDto order = new OrderDto(null, "Rollback");
-        order.setFoods(List.of(ref(first), ref(second)));
+        final NewOrderRequest order = NewOrderRequest.of("Rollback", TestUtils.foodIds(List.of(ref(first), ref(second))));
 
         assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(order));
 
@@ -114,8 +115,7 @@ class OrderTransactionsTest {
     @Test
     void placingAnOrderReservesStockOnce() {
         final Food coffee = food("TXN COFFEE", 5);
-        final OrderDto order = new OrderDto(null, "Two coffees");
-        order.setFoods(List.of(ref(coffee), ref(coffee)));
+        final NewOrderRequest order = NewOrderRequest.of("Two coffees", TestUtils.foodIds(List.of(ref(coffee), ref(coffee))));
 
         orderService.createOrder(order);
 
@@ -125,8 +125,7 @@ class OrderTransactionsTest {
     @Test
     void cancellingReleasesTheReservedStockOnce() {
         final Food coffee = food("TXN CANCEL COFFEE", 5);
-        final OrderDto order = new OrderDto(null, "Changed my mind");
-        order.setFoods(List.of(ref(coffee), ref(coffee)));
+        final NewOrderRequest order = NewOrderRequest.of("Changed my mind", TestUtils.foodIds(List.of(ref(coffee), ref(coffee))));
         final Long id = orderService.createOrder(order).getId();
         assertEquals(3, foodRepository.findById(coffee.getId()).orElseThrow().getAmount());
 
@@ -145,8 +144,7 @@ class OrderTransactionsTest {
     @Test
     void traceBackStillFindsOrdersAfterTheirFoodIsDeleted() {
         final Food satay = food("TXN SATAY", 5);
-        final OrderDto placed = new OrderDto(null, "Satay night");
-        placed.setFoods(List.of(ref(satay)));
+        final NewOrderRequest placed = NewOrderRequest.of("Satay night", TestUtils.foodIds(List.of(ref(satay))));
         final Long orderId = orderService.createOrder(placed).getId();
 
         foodService.deleteFood(satay.getId());
@@ -156,15 +154,14 @@ class OrderTransactionsTest {
         final TraceResult result = traceService.reportRestaurantIncident("txn_customer", "PEANUTS",
                 List.of(satay.getId()), LocalDateTime.now().minusHours(1), LocalDateTime.now().plusHours(1));
         assertTrue(result.getExposedOrderIds().contains(orderId));
-        assertEquals("TXN SATAY", orderService.getOrderById(orderId).getFoods().get(0).getFoodName());
+        assertEquals("TXN SATAY", orderService.getOrderById(orderId).getFoods().get(0).foodName());
     }
 
     @Test
     void aDeletedFoodCantBeOrdered() {
         final Food gone = food("TXN GONE", 5);
         foodService.deleteFood(gone.getId());
-        final OrderDto order = new OrderDto(null, "Too late");
-        order.setFoods(List.of(ref(gone)));
+        final NewOrderRequest order = NewOrderRequest.of("Too late", TestUtils.foodIds(List.of(ref(gone))));
 
         assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(order));
         assertEquals(5, foodRepository.findById(gone.getId()).orElseThrow().getAmount());
@@ -197,8 +194,7 @@ class OrderTransactionsTest {
 
         for (int round = 0; round < 10; round++) {
             signInAs("txn_customer", "ROLE_CUSTOMER");
-            final OrderDto placed = new OrderDto(null, "Race " + round);
-            placed.setFoods(List.of(ref(coffee)));
+            final NewOrderRequest placed = NewOrderRequest.of("Race " + round, List.of(coffee.getId()));
             final Long orderId = orderService.createOrder(placed).getId();
 
             final CyclicBarrier start = new CyclicBarrier(2);

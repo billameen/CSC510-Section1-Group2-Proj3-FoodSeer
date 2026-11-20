@@ -12,6 +12,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.parameters.P;
 import org.springframework.web.bind.annotation.*;
 
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.service.OrderService;
@@ -72,9 +73,8 @@ public class OrderController {
      */
     @PreAuthorize("hasRole('CUSTOMER')")
     @PostMapping
-    public ResponseEntity<OrderDto> createOrder(@RequestBody final OrderDto orderDto) {
-        logger.info("Creating order: {}", orderDto.toString());
-        final OrderDto savedOrderDto = orderService.createOrder(orderDto);
+    public ResponseEntity<OrderDto> createOrder(@RequestBody final NewOrderRequest request) {
+        final OrderDto savedOrderDto = orderService.createOrder(request);
         return ResponseEntity.ok(savedOrderDto);
     }
 

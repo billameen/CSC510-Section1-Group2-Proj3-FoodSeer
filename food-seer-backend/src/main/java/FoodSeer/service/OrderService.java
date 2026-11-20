@@ -2,6 +2,7 @@ package FoodSeer.service;
 
 import java.util.List;
 
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.exception.ResourceNotFoundException;
 
@@ -17,7 +18,7 @@ public interface OrderService {
      *            the order to create
      * @return the created order as a DTO
      */
-    OrderDto createOrder(OrderDto orderDto);
+    OrderDto createOrder(NewOrderRequest request);
 
     /**
      * Retrieves an order by its ID.

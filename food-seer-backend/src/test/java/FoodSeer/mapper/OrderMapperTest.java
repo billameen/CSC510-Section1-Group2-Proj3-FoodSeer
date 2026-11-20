@@ -1,113 +1,136 @@
 package FoodSeer.mapper;
 
-import FoodSeer.constant.OrderStatus;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import FoodSeer.constant.OrderStatus;
 import FoodSeer.dto.OrderDto;
-import FoodSeer.entity.Order;
-import FoodSeer.entity.Food;
+import FoodSeer.dto.OrderLineDto;
 import FoodSeer.entity.DriverStats;
+import FoodSeer.entity.Food;
+import FoodSeer.entity.Order;
+import FoodSeer.entity.OrderLine;
+import FoodSeer.entity.User;
 
 public class OrderMapperTest {
 
     private Order order;
-    private OrderDto orderDto;
-    private List<Food> foods;
-    private Set<Long> ratedFoodIds;
+    private Food pizza;
+    private Food burger;
 
     @BeforeEach
     public void setUp() {
-        // Initialize test data
-        foods = new ArrayList<>();
+        pizza = new Food("Pizza", 2, 15, Arrays.asList("GLUTEN", "DAIRY"));
+        pizza.setId(1L);
+        burger = new Food("Burger", 1, 9, Arrays.asList("GLUTEN"));
+        burger.setId(2L);
 
-        List<String> pizzaAllergies = Arrays.asList("Gluten", "Dairy");
-        Food food1 = new Food("Pizza", 2, 15, pizzaAllergies);
-        food1.setId(1L);
-        food1.setRating(4.5);
-        food1.setNumberOfRatings(10);
-
-        List<String> burgerAllergies = Arrays.asList("Gluten");
-        Food food2 = new Food("Burger", 1, 9, burgerAllergies);
-        food2.setId(2L);
-
-        foods.add(food1);
-        foods.add(food2);
-
-        ratedFoodIds = new HashSet<>(Arrays.asList(1L, 2L));
-
-        // Create test Order
         order = new Order(1L, "Test Order");
-        order.setFoods(foods);
+        order.setFoods(new ArrayList<>(List.of(pizza, burger)));
+        order.setLines(new ArrayList<>(List.of(OrderLine.of(pizza), OrderLine.of(burger))));
         order.setCost(new BigDecimal("25.00"));
         order.setStatus(OrderStatus.PLACED);
         order.setDeliveryCost(new BigDecimal("5.00"));
         order.setRating(new BigDecimal("4.8"));
-        order.setRatedFoodIds(ratedFoodIds);
+        order.setRatedFoodIds(new HashSet<>(Arrays.asList(1L, 2L)));
     }
 
+    @Test
+    public void mapsTheOrderAsPlainValues() {
+        final User customer = new User();
+        customer.setUsername("sid");
+        order.setUser(customer);
+        final DriverStats driver = new DriverStats();
+        driver.setUsername("drv");
+        order.setDriver(driver);
+
+        final OrderDto dto = OrderMapper.mapToOrderDto(order);
+
+        assertEquals(1L, dto.getId());
+        assertEquals("Test Order", dto.getName());
+        assertEquals(new BigDecimal("25.00"), dto.getCost());
+        assertEquals(new BigDecimal("5.00"), dto.getDeliveryCost());
+        assertEquals("Placed", dto.getStatus());
+        assertFalse(dto.getIsFulfilled());
+        assertEquals("sid", dto.getCustomerUsername());
+        assertEquals("drv", dto.getDriverUsername());
+        assertEquals(2, dto.getRatedFoodIds().size());
+        assertEquals(new OrderLineDto(1L, "PIZZA", new BigDecimal("15"), List.of("GLUTEN", "DAIRY"), null),
+                dto.getFoods().get(0));
+    }
+
+    /** History is the snapshot, not today's menu. */
+    @Test
+    public void laterMenuEditsDontChangeTheOrder() {
+        pizza.setFoodName("PIZZA DELUXE");
+        pizza.setPrice(99);
+        pizza.setAllergies(new ArrayList<>(List.of("GLUTEN", "DAIRY", "EGGS")));
+
+        final OrderLineDto line = OrderMapper.mapToOrderDto(order).getFoods().get(0);
+
+        assertEquals("PIZZA", line.foodName());
+        assertEquals(new BigDecimal("15"), line.price());
+        assertEquals(List.of("GLUTEN", "DAIRY"), line.allergies());
+    }
+
+    /** Orders placed before Milestone 3 have no snapshot; they show the foods. */
+    @Test
+    public void oldOrdersWithoutASnapshotFallBackToTheFoods() {
+        order.setLines(new ArrayList<>());
+
+        final OrderDto dto = OrderMapper.mapToOrderDto(order);
+
+        assertEquals(2, dto.getFoods().size());
+        assertEquals("BURGER", dto.getFoods().get(1).foodName());
+    }
 
     @Test
-    public void testMapToOrderDto_EdgeCases() {
-        // Empty foods list
+    public void edgeCases() {
+        order.setLines(new ArrayList<>());
         order.setFoods(new ArrayList<>());
         order.setRatedFoodIds(null);
 
-        OrderDto dto = OrderMapper.mapToOrderDto(order);
+        final OrderDto dto = OrderMapper.mapToOrderDto(order);
 
-        assertNotNull(dto.getFoods());
-        assertEquals(0, dto.getFoods().size());
-        assertNull(dto.getRatedFoodIds());
+        assertTrue(dto.getFoods().isEmpty());
+        assertNotNull(dto.getRatedFoodIds());
+        assertNull(dto.getDriverUsername());
+        assertNull(dto.getCustomerUsername());
 
-        // Food with null allergies
-        Food foodWithNullAllergies = new Food("Salad", 1, 7, null);
-        foodWithNullAllergies.setId(3L);
-        order.getFoods().add(foodWithNullAllergies);
-
-        dto = OrderMapper.mapToOrderDto(order);
-
-        assertEquals(1, dto.getFoods().size());
-        assertNotNull(dto.getFoods().get(0).getAllergies());
-        assertEquals(0, dto.getFoods().get(0).getAllergies().size());
+        final OrderLine noAllergens = new OrderLine(3L, "Salad", new BigDecimal("7"), null, 120);
+        assertTrue(noAllergens.getAllergens().isEmpty());
     }
 
     @Test
-    public void testOrder_RatingHelperMethods() {
+    public void deliveredOrdersAreFulfilled() {
+        order.setStatus(OrderStatus.DELIVERED);
+
+        final OrderDto dto = OrderMapper.mapToOrderDto(order);
+
+        assertTrue(dto.getIsFulfilled());
+        assertEquals("Delivered", dto.getStatus());
+    }
+
+    @Test
+    public void ratingHelpers() {
         assertTrue(order.hasFoodBeenRated(1L));
-        assertTrue(order.hasFoodBeenRated(2L));
         assertFalse(order.hasFoodBeenRated(3L));
 
         order.addRatedFoodId(3L);
-        assertTrue(order.hasFoodBeenRated(3L));
-        assertEquals(3, order.getRatedFoodIds().size());
-
-        // Adding duplicate should not increase size
         order.addRatedFoodId(3L);
+
         assertEquals(3, order.getRatedFoodIds().size());
-    }
-
-    @Test
-    public void testOrderDto_InitializationAndMethods() {
-        OrderDto dto = new OrderDto();
-
-        assertNotNull(dto.getFoods());
-        assertNotNull(dto.getRatedFoodIds());
-        assertEquals(0, dto.getFoods().size());
-        assertFalse(dto.getIsFulfilled());
-
-        Food newFood = foods.get(0);
-        dto.addFood(newFood);
-
-        assertEquals(1, dto.getFoods().size());
-        assertEquals(newFood, dto.getFoods().get(0));
     }
 }

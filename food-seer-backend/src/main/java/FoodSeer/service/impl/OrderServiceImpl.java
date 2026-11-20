@@ -2,7 +2,6 @@ package FoodSeer.service.impl;
 
 import FoodSeer.constant.OrderStatus;
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -12,9 +11,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Order;
+import FoodSeer.entity.OrderLine;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.mapper.OrderMapper;
 import FoodSeer.entity.User;
@@ -61,13 +62,13 @@ public class OrderServiceImpl implements OrderService {
      * are set here, so a client can't choose its own price or skip ahead in
      * the delivery flow.
      *
-     * @param orderDto order to create
+     * @param request order to create
      * @return created order
      */
     @Override
     @Transactional
-    public OrderDto createOrder(final OrderDto orderDto) {
-        if (orderDto == null || orderDto.getFoods() == null || orderDto.getFoods().isEmpty()) {
+    public OrderDto createOrder(final NewOrderRequest request) {
+        if (request == null || request.foods() == null || request.foods().isEmpty()) {
             throw new IllegalArgumentException("An order needs at least one item.");
         }
         final User currentUser = userService.getCurrentUser();
@@ -75,20 +76,18 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalStateException("No authenticated user found");
         }
 
-        final List<Long> foodIds = new ArrayList<>();
-        for (final Food food : orderDto.getFoods()) {
-            foodIds.add(food == null ? null : food.getId());
-        }
         // Validates every line, then decrements; prices come from the menu.
-        final List<Food> foods = stockService.reserve(foodIds);
+        final List<Food> foods = stockService.reserve(request.foodIds());
 
         final BigDecimal itemsTotal = OrderPricing.itemsTotal(foods);
         final BigDecimal deliveryCost = OrderPricing.deliveryCost(itemsTotal);
 
         // Create order entity directly (not using mapper to avoid creating new Food objects)
         final Order order = new Order();
-        order.setName(orderDto.getName());
+        order.setName(request.name());
         order.setFoods(foods);
+        // Snapshot each unit as it is now, so later menu edits don't rewrite this order.
+        order.setLines(foods.stream().map(OrderLine::of).collect(Collectors.toList()));
         order.setCost(itemsTotal.add(deliveryCost));
         order.setDeliveryCost(deliveryCost);
         order.setStatus(OrderStatus.PLACED);
