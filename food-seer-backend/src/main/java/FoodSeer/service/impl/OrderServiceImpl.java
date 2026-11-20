@@ -31,6 +31,7 @@ import FoodSeer.repositories.OrderRepository;
 import FoodSeer.service.InventoryService;
 import FoodSeer.service.OrderPricing;
 import FoodSeer.service.OrderService;
+import FoodSeer.service.OrderStateMachine;
 import FoodSeer.service.StockService;
 import FoodSeer.service.UserService;
 
@@ -67,6 +68,10 @@ public class OrderServiceImpl implements OrderService {
     /** Reserves stock when an order is placed. */
     @Autowired
     private StockService stockService;
+
+    /** Every status change goes through here. */
+    @Autowired
+    private OrderStateMachine stateMachine;
 
     /**
      * Creates an order for the signed-in customer and reserves its stock, all
@@ -247,98 +252,40 @@ public class OrderServiceImpl implements OrderService {
         return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
     }
 
+    /**
+     * A driver claims a placed order. If two drivers claim at once, the
+     * optimistic lock lets exactly one win; the other gets 409.
+     */
     @Override
+    @Transactional
     public OrderDto claimOrder(final Long orderId) {
-        final User currentUser = userService.getCurrentUser();
-
-        if (currentUser == null
-                || !"ROLE_DRIVER".equals(currentUser.getRole())) {
-            throw new SecurityException("Only drivers can claim orders");
-        }
-
-        final Order order = orderRepository.findById(orderId)
-            .orElseThrow(() ->
-                    new ResourceNotFoundException(
-                            "Order does not exist with id " + orderId));
-
-        if (order.getStatus() != OrderStatus.PLACED
-                || order.getDriver() != null) {
-            throw new IllegalStateException(
-                "Order is not available to claim");
-        }
-
-        order.setDriver(
-            DriverStatsMapper.mapToDriverStats(
-                    driverStatsService.getDriverStats(
-                            currentUser.getUsername())));
-
-        order.setStatus(OrderStatus.CLAIMED);
-
-        return OrderMapper.mapToOrderDto(orderRepository.save(order));
+        final Order order = load(orderId);
+        return OrderMapper.mapToOrderDto(stateMachine.transition(order, OrderStatus.CLAIMED,
+                userService.getCurrentUser()));
     }
 
+    /**
+     * The assigned driver moves an order to PICKED_UP or DELIVERED. A missing
+     * or unknown status is a 400; a move the state machine doesn't allow is a
+     * 409; anyone but the assigned driver is a 403.
+     *
+     * @param username ignored; the signed-in user is the actor
+     */
     @Override
-    public OrderDto updateOrder(final Long orderId, String username, String status) {
-        Order order = orderRepository.findById(orderId)
-            .orElseThrow(() ->
-                    new ResourceNotFoundException(
-                            "Order not found: " + orderId));
-
-        User currentUser = userService.getCurrentUser();
-
-        if (currentUser == null
-                || !"ROLE_DRIVER".equals(currentUser.getRole())) {
-            throw new SecurityException("Only drivers can update delivery status");
+    @Transactional
+    public OrderDto updateOrder(final Long orderId, final String username, final String status) {
+        final Order order = load(orderId);
+        final OrderStatus to = OrderStatus.parse(status);
+        if (to != OrderStatus.PICKED_UP && to != OrderStatus.DELIVERED) {
+            throw new IllegalArgumentException("Drivers can set an order to Picked Up or Delivered.");
         }
+        return OrderMapper.mapToOrderDto(stateMachine.transition(order, to, userService.getCurrentUser()));
+    }
 
-        String authenticatedUsername = currentUser.getUsername();
-
-        if (order.getDriver() == null
-                || !authenticatedUsername.equals(order.getDriver().getUsername())) {
-            throw new SecurityException("You are not assigned to this order");
-        }
-
-        if ("Picked Up".equals(status)) {
-            if (order.getStatus() != OrderStatus.CLAIMED) {
-                throw new IllegalStateException("Order must be claimed before pickup");
-            }
-
-            boolean hasRestrictions =
-                order.getAllergyRestrictions() != null
-                && !order.getAllergyRestrictions().isBlank();
-
-            if (hasRestrictions) {
-                if (!allergyHandoffService.isAcknowledged(orderId, "STAFF")) {
-                    throw new IllegalStateException(
-                        "Restaurant staff must acknowledge allergy warning first");
-                }
-
-                if (!allergyHandoffService.isAcknowledged(orderId, "DRIVER")) {
-                    throw new IllegalStateException(
-                        "Driver must acknowledge allergy warning before pickup");
-                    }
-                }
-
-                order.setStatus(OrderStatus.PICKED_UP);
-
-            } else if ("Delivered".equals(status)) {
-                if (order.getStatus() != OrderStatus.PICKED_UP) {
-                    throw new IllegalStateException(
-                        "Order must be picked up before delivery");
-                }
-
-                order.setStatus(OrderStatus.DELIVERED);
-
-                driverStatsService.updateTotalEarnings(
-                    authenticatedUsername, order.getDeliveryCost());
-
-            } else {
-                throw new IllegalArgumentException("Invalid delivery status");
-            }
-
-            orderRepository.save(order);
-            return OrderMapper.mapToOrderDto(order);
-        }
+    private Order load(final Long orderId) {
+        return orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order does not exist with id " + orderId));
+    }
 
     @Override
     public List<OrderDto> getAvailableOrders(){

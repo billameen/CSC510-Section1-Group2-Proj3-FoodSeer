@@ -53,6 +53,9 @@ class OrderServiceImplTest {
     @Mock
     private StockService stockService;
 
+    @Mock
+    private OrderStateMachine stateMachine;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -226,72 +229,60 @@ class OrderServiceImplTest {
     void updateOrder_whenNotFound_throwsException() {
         when(orderRepository.findById(999L)).thenReturn(Optional.empty());
 
-        assertThrows(
-            ResourceNotFoundException.class,
-            () -> orderService.updateOrder(999L, "any", "Picked Up")
-        );
-
-        verify(orderRepository, never()).save(any());
+        assertThrows(ResourceNotFoundException.class, () -> orderService.updateOrder(999L, "any", "Picked Up"));
+        verifyNoInteractions(stateMachine);
     }
 
-//    @Test
-//    void updateOrder_pickedUp_setsDriver_and_persists() {
-//        Order order = new Order();
-//        order.setId(200L);
-//        order.setStatus("Placed");
-//        order.setIsFulfilled(false);
-//
-//        when(orderRepository.findById(200L)).thenReturn(Optional.of(order));
-//        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-//
-//        DriverStatsDto statsDto = new DriverStatsDto();
-//        when(driverStatsService.getDriverStats("driverA")).thenReturn(statsDto);
-//
-//        DriverStats mapped = new DriverStats();
-//        mapped.setUsername("driverA");
-//
-//        try (MockedStatic<DriverStatsMapper> mocked = mockStatic(DriverStatsMapper.class)) {
-//            mocked.when(() -> DriverStatsMapper.mapToDriverStats(statsDto)).thenReturn(mapped);
-//
-//            OrderDto dto = orderService.updateOrder(200L, "driverA", "Picked Up");
-//
-//            assertNotNull(dto);
-//            ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
-//            verify(orderRepository, times(1)).save(captor.capture());
-//            Order saved = captor.getValue();
-//            assertNotNull(saved.getDriver());
-//            assertEquals("driverA", saved.getDriver().getUsername());
-//            assertFalse(saved.getIsFulfilled());
-//        }
-//    }
+    @Test
+    void updateOrder_parsesTheStatusAndUsesTheStateMachine() {
+        Order order = new Order(201L, "Dinner");
+        User driver = new User();
+        driver.setUsername("driverB");
+        when(orderRepository.findById(201L)).thenReturn(Optional.of(order));
+        when(userService.getCurrentUser()).thenReturn(driver);
+        when(stateMachine.transition(order, OrderStatus.DELIVERED, driver)).thenReturn(order);
+
+        try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
+            mocked.when(() -> OrderMapper.mapToOrderDto(order)).thenReturn(new OrderDto(201L, "Dinner"));
+
+            // The old label and the enum name both work.
+            assertEquals(201L, orderService.updateOrder(201L, "driverB", "Delivered").getId());
+            assertEquals(201L, orderService.updateOrder(201L, "driverB", "DELIVERED").getId());
+        }
+        verify(stateMachine, times(2)).transition(order, OrderStatus.DELIVERED, driver);
+    }
 
     @Test
-    void updateOrder_delivered_bySameDriver_setsFulfilled_and_updatesEarnings() {
-        Order order = new Order();
-        order.setId(201L);
-        order.setStatus(OrderStatus.PICKED_UP);
-        order.setDeliveryCost(BigDecimal.valueOf(15));
+    void updateOrder_rejectsMissingUnknownAndNonDriverStatuses() {
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(new Order(5L, "x")));
 
-        DriverStats driver = new DriverStats();
-        driver.setUsername("driverB");
-        order.setDriver(driver);
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", null));
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", "Teleported"));
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", "Cancelled"));
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", "Claimed"));
+        verifyNoInteractions(stateMachine);
+    }
 
-        when(orderRepository.findById(201L)).thenReturn(Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-        User currentUser = new User();
-        currentUser.setUsername("driverB");
-        currentUser.setRole("ROLE_DRIVER");
+    @Test
+    void claimOrder_usesTheStateMachine() {
+        Order order = new Order(300L, "Lunch");
+        User driver = new User();
+        driver.setUsername("drv");
+        when(orderRepository.findById(300L)).thenReturn(Optional.of(order));
+        when(userService.getCurrentUser()).thenReturn(driver);
+        when(stateMachine.transition(order, OrderStatus.CLAIMED, driver)).thenReturn(order);
 
-        when(userService.getCurrentUser()).thenReturn(currentUser);
+        try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
+            mocked.when(() -> OrderMapper.mapToOrderDto(order)).thenReturn(new OrderDto(300L, "Lunch"));
+            assertEquals(300L, orderService.claimOrder(300L).getId());
+        }
+    }
 
-        OrderDto dto = orderService.updateOrder(201L, "driverB", "Delivered");
+    @Test
+    void claimOrder_unknownOrderIsNotFound() {
+        when(orderRepository.findById(404L)).thenReturn(Optional.empty());
 
-        assertNotNull(dto);
-        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
-        verify(orderRepository, times(1)).save(captor.capture());
-        Order saved = captor.getValue();
-        assertTrue(saved.getIsFulfilled());
-        verify(driverStatsService, times(1)).updateTotalEarnings("driverB", saved.getDeliveryCost());
+        assertThrows(ResourceNotFoundException.class, () -> orderService.claimOrder(404L));
     }
 
     @Test

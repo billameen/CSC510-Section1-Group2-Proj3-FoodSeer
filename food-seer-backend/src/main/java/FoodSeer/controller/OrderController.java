@@ -149,17 +149,9 @@ public class OrderController {
 
     @PreAuthorize("hasRole('DRIVER')")
     @PostMapping("/{id}/claim")
-    public ResponseEntity<?> claimOrder(@PathVariable("id") final Long id) {
-        try {
-            final OrderDto claimedOrder = orderService.claimOrder(id);
-            return ResponseEntity.ok(claimedOrder);
-        } catch (ResourceNotFoundException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body("Order not found");
-        } catch (IllegalStateException e) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(e.getMessage());
-        }
+    public ResponseEntity<OrderDto> claimOrder(@PathVariable("id") final Long id) {
+        // 404 unknown order, 409 already claimed (including a lost race), 403 not a driver
+        return ResponseEntity.ok(orderService.claimOrder(id));
     }
 
     @PreAuthorize("hasAnyRole('ADMIN', 'DRIVER')")
