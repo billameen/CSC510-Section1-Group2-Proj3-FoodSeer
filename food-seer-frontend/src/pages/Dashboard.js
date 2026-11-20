@@ -118,6 +118,8 @@ const Dashboard = ({ type = 'inventory' }) => {
 // Inside Dashboard.js — orders dashboard section
 // Inside Dashboard.js — orders dashboard section
 if (type === 'orders') {
+  // Active (placed, claimed, picked up) plus delivered. Cancelled orders are
+  // in neither list, so they don't count toward items or revenue.
   const allOrders = [...unfulfilledOrders, ...fulfilledOrders];
   const pendingCount = unfulfilledOrders.length;
   const fulfilledCount = fulfilledOrders.length;
@@ -194,10 +196,10 @@ if (type === 'orders') {
       <h2 style={{ marginBottom: '24px' }}>📊 Orders Dashboard</h2>
       <div className="dashboard-grid">
         <div className="chart-container">
-          <h4>Pending vs Fulfilled Orders</h4>
+          <h4>Active vs Delivered Orders</h4>
           <Pie
             data={{
-              labels: ['Pending', 'Fulfilled'],
+              labels: ['Active', 'Delivered'],
               datasets: [{ data: [pendingCount, fulfilledCount], backgroundColor: ['#ff9800', '#4caf50'] }],
             }}
             options={commonOptions}
