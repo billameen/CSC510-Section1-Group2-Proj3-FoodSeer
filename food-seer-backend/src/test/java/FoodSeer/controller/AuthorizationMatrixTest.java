@@ -81,7 +81,7 @@ import FoodSeer.service.impl.JwtAuthenticationEntryPoint;
 @WebMvcTest(controllers = {
     AllergenController.class, AllergyHandoffController.class, AuthController.class, ChatController.class,
     DriverStatsController.class, FoodController.class, IncidentController.class, InventoryController.class,
-    NotificationController.class, OrderController.class, UserController.class
+    NotificationController.class, OrderController.class, StreamController.class, UserController.class
 }, properties = {
     "app.jwt-secret=Zm9vZHNlZXItdGVzdC1vbmx5LXNpZ25pbmcta2V5LTMyaXRlbXM=",
     "app.jwt-expiration-milliseconds=60000"
@@ -112,6 +112,10 @@ class AuthorizationMatrixTest {
 
     @MockBean
     private UserRepository users;
+    @MockBean
+    private FoodSeer.live.StreamTicketService streamTickets;
+    @MockBean
+    private FoodSeer.live.StreamBroker streamBroker;
     @MockBean
     private OrderRepository orders;
 
@@ -207,6 +211,11 @@ class AuthorizationMatrixTest {
             row("POST", "/api/orders/1/cancel", null, "401 OK 403 OK OK"),
             row("POST", "/api/orders/1/claim", null, "401 403 OK 403 403"),
             row("GET", "/api/orders/availableOrders", null, "401 403 OK 403 OK"),
+
+            // Live stream (M6): a ticket needs a JWT; the stream itself needs a
+            // ticket, so a JWT alone gets 401 for every role.
+            row("POST", "/api/stream/ticket", null, "401 OK OK OK OK"),
+            row("GET", "/api/stream", null, "401 401 401 401 401"),
             row("GET", "/api/orders/activeOrders/driver", null, "401 403 OK 403 OK"),
             row("POST", "/api/orders/1/allergy-handoff/acknowledge", null, "401 403 OK OK 403"),
             row("GET", "/api/orders/1/allergy-handoff/status", null, "401 403 OK OK 403"),
@@ -268,6 +277,7 @@ class AuthorizationMatrixTest {
 
     @BeforeEach
     void setUp() {
+        org.mockito.Mockito.when(streamTickets.issue(org.mockito.ArgumentMatchers.anyString())).thenReturn("ticket");
         final String hash = passwordEncoder.encode(PASSWORD);
         for (final String name : new String[] { "customer", "customer2", "driver", "driver2", "staff", "admin" }) {
             final String role = "ROLE_" + name.replaceAll("[0-9]", "").toUpperCase();

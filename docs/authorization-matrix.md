@@ -78,6 +78,8 @@ Two rules apply to every row:
 | POST | `/api/orders/{id}` | 401 | 403 | ✅ assigned driver | 403 | 403 | Delivery status update; an unassigned driver is 403 |
 | POST | `/api/orders/{id}/cancel` | 401 | ✅ own order | 403 | ✅ | ✅ | Releases reserved stock. A customer only while it's Placed (409 after a driver claims it); staff and admin until it's delivered |
 | POST | `/api/orders/{id}/claim` | 401 | 403 | ✅ | 403 | 403 | |
+| POST | `/api/stream/ticket` | 401 | ✅ | ✅ | ✅ | ✅ | M6. A single-use ticket, valid 30 s, for opening the live stream |
+| GET | `/api/stream?ticket=` | 401 | ticket | ticket | ticket | ticket | M6. Open at the filter level; the ticket is the credential, so a JWT alone is 401. Each user sees only their own events (see docs/live-updates.md); a 4th open stream is 429 |
 | GET | `/api/orders/availableOrders` | 401 | 403 | ✅ | 403 | ✅ | |
 | GET | `/api/orders/activeOrders/{username}` | 401 | 403 | ✅ self | 403 | ✅ | Another driver's username is 403 |
 | POST | `/api/orders/{orderId}/allergy-handoff/acknowledge` | 401 | 403 | ✅ | ✅ | 403 | |
