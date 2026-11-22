@@ -1,5 +1,6 @@
 package FoodSeer.service;
 
+import FoodSeer.live.OrderEventRecorder;
 import FoodSeer.constant.OrderStatus;
 import FoodSeer.entity.AllergyAcknowledgment;
 import FoodSeer.entity.Order;
@@ -23,6 +24,10 @@ public class AllergyHandoffService {
 
     @Autowired
     private UserService userService;
+
+    /** Records the acknowledgement in the order's timeline. */
+    @Autowired
+    private OrderEventRecorder timeline;
 
     @Transactional
     public AllergyAcknowledgment acknowledge(Long orderId, String role) {
@@ -83,7 +88,9 @@ public class AllergyHandoffService {
                         role
                 );
 
-        return acknowledgmentRepository.save(acknowledgment);
+        final AllergyAcknowledgment saved = acknowledgmentRepository.save(acknowledgment);
+        timeline.allergyAcknowledged(order, currentUser, role);
+        return saved;
     }
 
     public boolean isAcknowledged(Long orderId, String role) {

@@ -48,6 +48,9 @@ class OrderStateMachineTest {
     private AllergyHandoffService handoff;
     @Mock
     private StockService stock;
+    @Mock
+    private FoodSeer.live.OrderEventRecorder timeline;
+
     @InjectMocks
     private OrderStateMachine machine;
 
@@ -114,10 +117,13 @@ class OrderStateMachineTest {
 
         if (ALLOWED.contains(from + ">" + to)) {
             assertEquals(to, machine.transition(order, to, actor).getStatus());
+            // Exactly one timeline entry, recording where it came from.
+            verify(timeline).transitioned(order, from, actor);
         } else {
             assertThrows(IllegalStateException.class, () -> machine.transition(order, to, actor));
             assertEquals(from, order.getStatus(), "a refused move leaves the order as it was");
             verify(orders, never()).saveAndFlush(any());
+            verify(timeline, never()).transitioned(any(), any(), any());
         }
     }
 
@@ -201,5 +207,27 @@ class OrderStateMachineTest {
     @Test
     void nobodySignedInIsRefused() {
         assertThrows(SecurityException.class, () -> machine.transition(order(OrderStatus.PLACED), OrderStatus.CLAIMED, null));
+    }
+
+    @Test
+    void aMoveTheActorMayNotMakeRecordsNothing() {
+        final Order order = order(OrderStatus.PLACED);
+
+        assertThrows(SecurityException.class,
+                () -> machine.transition(order, OrderStatus.CLAIMED, user("staff", "ROLE_STAFF")));
+
+        verify(timeline, never()).transitioned(any(), any(), any());
+    }
+
+    @Test
+    void theEventIsRecordedAfterTheSaveSoItSharesItsTransaction() {
+        final Order order = order(OrderStatus.PLACED);
+        final User driver = allowedActorFor(OrderStatus.CLAIMED);
+
+        machine.transition(order, OrderStatus.CLAIMED, driver);
+
+        final org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(orders, timeline);
+        inOrder.verify(orders).saveAndFlush(order);
+        inOrder.verify(timeline).transitioned(order, OrderStatus.PLACED, driver);
     }
 }

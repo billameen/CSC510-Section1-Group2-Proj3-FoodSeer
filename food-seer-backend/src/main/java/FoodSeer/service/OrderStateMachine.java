@@ -11,6 +11,7 @@ import FoodSeer.entity.DriverStats;
 import FoodSeer.entity.Order;
 import FoodSeer.entity.User;
 import FoodSeer.exception.ResourceNotFoundException;
+import FoodSeer.live.OrderEventRecorder;
 import FoodSeer.repositories.DriverStatsRepository;
 import FoodSeer.repositories.OrderRepository;
 
@@ -23,7 +24,8 @@ import FoodSeer.repositories.OrderRepository;
  * <li>the move's own guard, such as the allergy hand-off before pickup</li>
  * </ol>
  * and then its side effect happens exactly once: stock is released on cancel,
- * and the driver is paid on delivery. The save is flushed here, so if another
+ * and the driver is paid on delivery. Each move is recorded in the order's
+ * timeline in the same transaction. The save is flushed here, so if another
  * request changed the order first, the @Version check fails now (409).
  */
 @Component
@@ -34,6 +36,7 @@ public class OrderStateMachine {
     private final DriverStatsService earnings;
     private final AllergyHandoffService handoff;
     private final StockService stock;
+    private final OrderEventRecorder timeline;
 
     /**
      * @param orders
@@ -46,14 +49,18 @@ public class OrderStateMachine {
      *            allergy hand-off acknowledgements
      * @param stock
      *            reserves and releases stock
+     * @param timeline
+     *            records each move in the order's timeline
      */
     public OrderStateMachine ( final OrderRepository orders, final DriverStatsRepository driverStats,
-            final DriverStatsService earnings, final AllergyHandoffService handoff, final StockService stock ) {
+            final DriverStatsService earnings, final AllergyHandoffService handoff, final StockService stock,
+            final OrderEventRecorder timeline ) {
         this.orders = orders;
         this.driverStats = driverStats;
         this.earnings = earnings;
         this.handoff = handoff;
         this.stock = stock;
+        this.timeline = timeline;
     }
 
     /**
@@ -104,6 +111,8 @@ public class OrderStateMachine {
 
         order.setStatus( to );
         final Order saved = orders.saveAndFlush( order );
+        // Same transaction as the save: a move that rolls back leaves no event.
+        timeline.transitioned( saved, from, actor );
 
         if ( to == OrderStatus.DELIVERED ) {
             // DELIVERED is final, so this runs once per order. Older orders may

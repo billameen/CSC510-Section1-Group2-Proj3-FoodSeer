@@ -58,6 +58,9 @@ class OrderServiceImplTest {
     @Mock
     private OrderStateMachine stateMachine;
 
+    @Mock
+    private FoodSeer.live.OrderEventRecorder timeline;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 

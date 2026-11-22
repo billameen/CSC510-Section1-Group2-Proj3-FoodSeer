@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
+import FoodSeer.dto.OrderEventDto;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.service.OrderService;
 
@@ -76,6 +77,22 @@ public class OrderController {
     public ResponseEntity<OrderDto> createOrder(@RequestBody final NewOrderRequest request) {
         final OrderDto savedOrderDto = orderService.createOrder(request);
         return ResponseEntity.ok(savedOrderDto);
+    }
+
+    /**
+     * An order's timeline: who changed it, when, and from what to what. The
+     * same people who can see the order can see its timeline.
+     *
+     * @param id
+     *            the order
+     * @return its events, oldest first
+     */
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')"
+            + " or (hasRole('CUSTOMER') and @orderAccess.isOwner(authentication, #id))"
+            + " or (hasRole('DRIVER') and @orderAccess.isAssignedDriver(authentication, #id))")
+    @GetMapping("/{id}/events")
+    public ResponseEntity<List<OrderEventDto>> getOrderEvents(@P("id") @PathVariable("id") final Long id) {
+        return ResponseEntity.ok(orderService.getOrderEvents(id));
     }
 
     /**
