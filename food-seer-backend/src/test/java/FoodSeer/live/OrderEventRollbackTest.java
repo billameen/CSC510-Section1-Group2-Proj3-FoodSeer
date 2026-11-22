@@ -48,6 +48,8 @@ class OrderEventRollbackTest {
     @Autowired
     private OrderEventRepository  events;
     @Autowired
+    private FoodSeer.repositories.OutboxEventRepository outbox;
+    @Autowired
     private OrderRepository       orderRepository;
     @Autowired
     private FoodRepository        foodRepository;
@@ -62,7 +64,10 @@ class OrderEventRollbackTest {
     @AfterEach
     void tearDown () {
         SecurityContextHolder.clearContext();
-        orderIds.forEach( id -> events.deleteAll( events.findByOrderIdOrderByIdAsc( id ) ) );
+        orderIds.forEach( id -> {
+            events.deleteAll( events.findByOrderIdOrderByIdAsc( id ) );
+            outbox.deleteAll( outbox.findByOrderIdOrderByIdAsc( id ) );
+        } );
         orderRepository.deleteAllById( orderIds );
         if ( food != null ) {
             foodRepository.delete( food );
@@ -102,5 +107,6 @@ class OrderEventRollbackTest {
         assertEquals( OrderStatus.PICKED_UP, orderRepository.findById( id ).orElseThrow().getStatus() );
         assertEquals( List.of( "PLACED", "CLAIMED", "PICKED_UP" ),
                 orderService.getOrderEvents( id ).stream().map( OrderEventDto::type ).toList() );
+        assertEquals( 3, outbox.findByOrderIdOrderByIdAsc( id ).size(), "no live message for the failed delivery" );
     }
 }

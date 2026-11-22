@@ -49,6 +49,8 @@ class OrderEventLogTest {
     @Autowired
     private OrderEventRepository  events;
     @Autowired
+    private FoodSeer.repositories.OutboxEventRepository outbox;
+    @Autowired
     private OrderRepository       orderRepository;
     @Autowired
     private FoodRepository        foodRepository;
@@ -79,7 +81,10 @@ class OrderEventLogTest {
     @AfterEach
     void tearDown () {
         SecurityContextHolder.clearContext();
-        orderIds.forEach( id -> events.deleteAll( events.findByOrderIdOrderByIdAsc( id ) ) );
+        orderIds.forEach( id -> {
+            events.deleteAll( events.findByOrderIdOrderByIdAsc( id ) );
+            outbox.deleteAll( outbox.findByOrderIdOrderByIdAsc( id ) );
+        } );
         acknowledgments.deleteAll( acknowledgments.findAll().stream()
                 .filter( a -> orderIds.contains( a.getOrder().getId() ) ).toList() );
         orderRepository.deleteAllById( orderIds );

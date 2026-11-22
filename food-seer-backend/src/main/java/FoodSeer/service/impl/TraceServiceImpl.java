@@ -1,5 +1,7 @@
 package FoodSeer.service.impl;
 
+import FoodSeer.live.OutboxWriter;
+import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -51,6 +53,7 @@ public class TraceServiceImpl implements TraceService {
     private final IncidentRepository incidentRepository;
     private final NotificationRepository notificationRepository;
     private final long windowHours;
+    private OutboxWriter outbox;
 
     /** Longest remedy text staff can attach, matching the database column. */
     static final int MAX_REMEDY_LENGTH = 500;
@@ -89,6 +92,46 @@ public class TraceServiceImpl implements TraceService {
         this.incidentRepository = incidentRepository;
         this.notificationRepository = notificationRepository;
         this.windowHours = windowHours;
+    }
+
+    /**
+     * Live updates are optional here so the service (and the M0 eval that
+     * builds it by hand) works without them; Spring always supplies one.
+     *
+     * @param outbox
+     *            queues live updates
+     */
+    @Autowired(required = false)
+    public void setOutbox(final OutboxWriter outbox) {
+        this.outbox = outbox;
+    }
+
+    private void announceNotice(final Notification notification) {
+        if (outbox == null) {
+            return;
+        }
+        final Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("noticeId", notification.getId());
+        payload.put("orderId", notification.getOrderId());
+        payload.put("incidentId", notification.getIncidentId());
+        payload.put("message", notification.getMessage());
+        payload.put("createdAt", notification.getCreatedAt());
+        outbox.write("safety.notice", payload, notification.getOrderId(),
+                List.of(notification.getRecipientUsername()), List.of());
+    }
+
+    private void announceIncident(final Incident incident) {
+        if (outbox == null) {
+            return;
+        }
+        final Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("incidentId", incident.getId());
+        payload.put("source", incident.getSource());
+        payload.put("status", incident.getStatus());
+        payload.put("allergen", incident.getAllergen());
+        payload.put("exposedOrderCount", incident.getExposedOrderCount());
+        outbox.write("incident.reported", payload, incident.getSourceOrderId(), List.of(),
+                List.of("STAFF", "ADMIN"));
     }
 
     @Override
@@ -180,6 +223,7 @@ public class TraceServiceImpl implements TraceService {
         incident.setSuspectFoodIds(candidateIds);
         incident.setReportedAt(LocalDateTime.now());
         final Incident savedIncident = incidentRepository.save(incident);
+        announceIncident(savedIncident);
         return new TraceResult(savedIncident, Collections.emptyList(), Collections.emptyList());
     }
 
@@ -249,6 +293,11 @@ public class TraceServiceImpl implements TraceService {
         // written when it commits.
         savedIncident.setExposedOrderCount(exposedOrderIds.size());
         savedIncident.setNotifiedCount(notifications.size());
+
+        // Pushed live in this same transaction, so the customer sees the notice
+        // as soon as it exists instead of whenever they next open the page.
+        notifications.forEach(this::announceNotice);
+        announceIncident(savedIncident);
 
         return new TraceResult(savedIncident, exposedOrderIds, notifications);
     }
