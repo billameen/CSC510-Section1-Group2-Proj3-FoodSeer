@@ -61,6 +61,9 @@ class OrderServiceImplTest {
     @Mock
     private FoodSeer.live.OrderEventRecorder timeline;
 
+    @Mock
+    private FoodSeer.repositories.OrderEventRepository orderEventRepository;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
@@ -368,5 +371,28 @@ class OrderServiceImplTest {
             assertEquals(1, act.size());
             assertEquals(301L, act.get(0).getId());
         }
+    }
+
+    @Test
+    void getOrderEvents_returnsTheTimelineOldestFirst() {
+        when(orderRepository.existsById(7L)).thenReturn(true);
+        when(orderEventRepository.findByOrderIdOrderByIdAsc(7L)).thenReturn(List.of(
+                new FoodSeer.entity.OrderEvent(7L, FoodSeer.constant.OrderEventType.PLACED, null, OrderStatus.PLACED,
+                        "carol", "CUSTOMER", null),
+                new FoodSeer.entity.OrderEvent(7L, FoodSeer.constant.OrderEventType.CLAIMED, OrderStatus.PLACED,
+                        OrderStatus.CLAIMED, "dan", "DRIVER", null)));
+
+        final List<FoodSeer.dto.OrderEventDto> timeline = orderService.getOrderEvents(7L);
+
+        assertEquals(List.of("PLACED", "CLAIMED"), timeline.stream().map(FoodSeer.dto.OrderEventDto::type).toList());
+        assertEquals("Placed", timeline.get(1).fromStatus());
+    }
+
+    @Test
+    void getOrderEvents_forAMissingOrderIs404() {
+        when(orderRepository.existsById(8L)).thenReturn(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> orderService.getOrderEvents(8L));
+        verify(orderEventRepository, never()).findByOrderIdOrderByIdAsc(any());
     }
 }

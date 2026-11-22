@@ -198,10 +198,18 @@
           <targetClasses>
   <param>FoodSeer.service.impl.DriverStatsImpl</param>
   <param>FoodSeer.service.impl.OrderServiceImpl</param>
+  <param>FoodSeer.service.OrderStateMachine</param>
+  <param>FoodSeer.live.OrderEventRecorder</param>
+  <param>FoodSeer.live.OutboxDispatcher</param>
+  <param>FoodSeer.live.StreamTicketService</param>
 </targetClasses>
 <targetTests>
   <param>FoodSeer.service.DriverStatsImplTest</param>
   <param>FoodSeer.service.OrderServiceImplTest</param>
+  <param>FoodSeer.service.OrderStateMachineTest</param>
+  <param>FoodSeer.live.OrderEventRecorderTest</param>
+  <param>FoodSeer.live.OutboxDispatcherTest</param>
+  <param>FoodSeer.live.StreamTicketServiceTest</param>
 </targetTests>
           <threads>1</threads>
           <timestampedReports>false</timestampedReports>

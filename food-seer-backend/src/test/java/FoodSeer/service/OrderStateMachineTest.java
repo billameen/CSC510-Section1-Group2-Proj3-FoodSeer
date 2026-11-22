@@ -230,4 +230,23 @@ class OrderStateMachineTest {
         inOrder.verify(orders).saveAndFlush(order);
         inOrder.verify(timeline).transitioned(order, OrderStatus.PLACED, driver);
     }
+
+    @Test
+    void aDriverWithoutStatsCantClaim() {
+        final Order order = order(OrderStatus.PLACED);
+        when(driverStats.findByUsername("nostats")).thenReturn(java.util.Optional.empty());
+
+        assertThrows(FoodSeer.exception.ResourceNotFoundException.class,
+                () -> machine.transition(order, OrderStatus.CLAIMED, user("nostats", "ROLE_DRIVER")));
+        verify(timeline, never()).transitioned(any(), any(), any());
+    }
+
+    @Test
+    void sharingTheAssignedDriversUsernameIsNotEnoughWithoutTheDriverRole() {
+        final Order order = order(OrderStatus.CLAIMED);
+        final String assigned = order.getDriver().getUsername();
+
+        assertThrows(SecurityException.class,
+                () -> machine.transition(order, OrderStatus.PICKED_UP, user(assigned, "ROLE_STAFF")));
+    }
 }

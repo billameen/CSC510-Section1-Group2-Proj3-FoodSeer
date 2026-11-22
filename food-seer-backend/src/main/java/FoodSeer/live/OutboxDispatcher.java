@@ -90,12 +90,15 @@ public class OutboxDispatcher {
         return sent;
     }
 
-    /** Hourly: forget sent messages older than the resume window. */
+    /**
+     * Hourly: forget sent messages older than the resume window.
+     *
+     * @return how many were removed
+     */
     @Scheduled ( fixedDelayString = "${app.outbox.purge-interval-ms:3600000}" )
-    public void purge () {
+    public int purge () {
         final int removed = outbox.deletePublishedBefore( LocalDateTime.now().minusHours( retentionHours ) );
-        if ( removed > 0 ) {
-            LOG.info( "Removed {} sent outbox messages older than {} h.", removed, retentionHours );
-        }
+        LOG.debug( "Removed {} sent outbox messages older than {} h.", removed, retentionHours );
+        return removed;
     }
 }

@@ -71,4 +71,9 @@ class StreamTicketServiceTest {
         assertTrue( a.length() >= 43, "256 bits, URL-safe base64" );
         assertTrue( a.matches( "[A-Za-z0-9_-]+" ) );
     }
+
+    @Test
+    void reportsHowLongTicketsLast () {
+        assertEquals( 30, tickets.getTtlSeconds() );
+    }
 }

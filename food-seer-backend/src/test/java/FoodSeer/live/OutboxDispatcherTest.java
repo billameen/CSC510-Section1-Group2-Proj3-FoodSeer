@@ -107,10 +107,38 @@ class OutboxDispatcherTest {
     void purgeForgetsSentMessagesOlderThanTheResumeWindow () {
         final LocalDateTime before = LocalDateTime.now().minusHours( 24 );
 
-        dispatcher.purge();
+        assertEquals( 0, dispatcher.purge() );
 
         final ArgumentCaptor<LocalDateTime> cutoff = ArgumentCaptor.forClass( LocalDateTime.class );
         verify( outbox ).deletePublishedBefore( cutoff.capture() );
         assertTrue( !cutoff.getValue().isBefore( before ) && cutoff.getValue().isBefore( before.plusMinutes( 1 ) ) );
+    }
+
+    @Test
+    void dispatchAllKeepsGoingUntilNothingIsLeft () {
+        assertEquals( 3, dispatcher.dispatchAll() );
+        assertEquals( List.of( "a", "b", "c" ), sink.received );
+        assertEquals( 0, dispatcher.dispatchAll() );
+    }
+
+    @Test
+    void dispatchAllAddsUpEveryBatch () {
+        // Each call returns one message, like a backlog spread over batches.
+        final List<OutboxEvent> backlog = new ArrayList<>( List.of( event( "x" ), event( "y" ) ) );
+        org.mockito.Mockito.lenient().when( outbox.findTop200ByPublishedAtIsNullOrderByIdAsc() ).thenAnswer( inv -> {
+            final List<OutboxEvent> next = backlog.stream().filter( e -> e.getPublishedAt() == null ).limit( 1 )
+                    .toList();
+            return next;
+        } );
+
+        assertEquals( 2, dispatcher.dispatchAll() );
+        assertEquals( List.of( "x", "y" ), sink.received );
+    }
+
+    @Test
+    void purgeReportsHowManyWereRemoved () {
+        when( outbox.deletePublishedBefore( any() ) ).thenReturn( 4 );
+
+        assertEquals( 4, dispatcher.purge() );
     }
 }
