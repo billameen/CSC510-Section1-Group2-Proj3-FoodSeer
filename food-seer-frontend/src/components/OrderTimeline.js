@@ -3,7 +3,7 @@ import { getOrderEvents } from '../services/api';
 
 const WHAT = {
   PLACED: 'Order placed',
-  CLAIMED: 'Claimed by a driver',
+  CLAIMED: 'Claimed',
   PICKED_UP: 'Picked up',
   DELIVERED: 'Delivered',
   CANCELLED: 'Cancelled',

@@ -36,7 +36,7 @@ describe('OrderTimeline', () => {
 
     expect(getOrderEvents).toHaveBeenCalledWith(4);
     expect(await screen.findByText(/Order placed by alice \(customer\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Claimed by a driver by dan \(driver\)/)).toBeInTheDocument();
+    expect(screen.getByText(/Claimed by dan \(driver\)/)).toBeInTheDocument();
     expect(screen.getByText(/Restaurant staff acknowledged the allergy warning\. by sam/)).toBeInTheDocument();
   });
 

@@ -2961,9 +2961,10 @@ code {
 .timeline-item {
   position: relative;
   display: flex;
-  gap: 12px;
+  flex-direction: column;
   padding: 4px 0;
   font-size: 13px;
+  text-align: left;
 }
 
 .timeline-item::before {
@@ -2991,7 +2992,7 @@ code {
 
 .timeline-when {
   color: #6c757d;
-  min-width: 110px;
+  font-size: 12px;
 }
 
 .timeline-error,
