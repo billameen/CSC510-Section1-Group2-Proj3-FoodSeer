@@ -3,16 +3,26 @@ import { useNavigate } from 'react-router-dom';
 import {
   getMyOrders,
   getCurrentUser,
+  cancelOrder,
   rateFoodItem,
   reportCustomerReaction,
   updateUserPreferences
 } from '../services/api'; // Added rateFoodItem
 import { ALLERGEN_SUGGESTIONS } from '../components/allergyOptions';
+import {
+  ORDER_STATUS,
+  isActive,
+  isDelivered,
+  isCancelled,
+  customerCanCancel,
+  statusBadge,
+} from '../data/orderStatus';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); // all, fulfilled, unfulfilled
+  const [filter, setFilter] = useState('all'); // all, active, delivered, cancelled
+  const [cancelling, setCancelling] = useState({});
   // The customer's own saved allergies (set on Personal Diet / the onboarding
   // quiz), so the reaction-report suggestions below reflect what they've
   // actually told FoodSeer they're allergic to, not just generic examples.
@@ -76,12 +86,29 @@ const Orders = () => {
 
   const getFilteredOrders = () => {
     switch (filter) {
-      case 'fulfilled':
-        return orders.filter(order => order.isFulfilled);
-      case 'unfulfilled':
-        return orders.filter(order => !order.isFulfilled);
+      case 'active':
+        return orders.filter(isActive);
+      case 'delivered':
+        return orders.filter(isDelivered);
+      case 'cancelled':
+        return orders.filter(isCancelled);
       default:
         return orders;
+    }
+  };
+
+  // Only possible before a driver claims it; the server checks that too and
+  // answers 409 if a driver got there first.
+  const handleCancelOrder = async (orderId) => {
+    if (!window.confirm('Cancel this order?')) return;
+    setCancelling(prev => ({ ...prev, [orderId]: true }));
+    try {
+      await cancelOrder(orderId);
+    } catch (error) {
+      alert(error.message || 'Could not cancel this order.');
+    } finally {
+      setCancelling(prev => ({ ...prev, [orderId]: false }));
+      fetchOrders();
     }
   };
 
@@ -200,16 +227,22 @@ const Orders = () => {
           All Orders ({orders.length})
         </button>
         <button
-          className={`filter-button ${filter === 'unfulfilled' ? 'active' : ''}`}
-          onClick={() => setFilter('unfulfilled')}
+          className={`filter-button ${filter === 'active' ? 'active' : ''}`}
+          onClick={() => setFilter('active')}
         >
-          Pending ({orders.filter(o => !o.isFulfilled).length})
+          Active ({orders.filter(isActive).length})
         </button>
         <button
-          className={`filter-button ${filter === 'fulfilled' ? 'active' : ''}`}
-          onClick={() => setFilter('fulfilled')}
+          className={`filter-button ${filter === 'delivered' ? 'active' : ''}`}
+          onClick={() => setFilter('delivered')}
         >
-          Fulfilled ({orders.filter(o => o.isFulfilled).length})
+          Delivered ({orders.filter(isDelivered).length})
+        </button>
+        <button
+          className={`filter-button ${filter === 'cancelled' ? 'active' : ''}`}
+          onClick={() => setFilter('cancelled')}
+        >
+          Cancelled ({orders.filter(isCancelled).length})
         </button>
       </div>
 
@@ -226,9 +259,20 @@ const Orders = () => {
             <div key={order.id} className="order-card">
               <div className="order-header">
                 <h3>{order.name || `Order #${order.id}`}</h3>
-                <span className={`status-badge ${order.isFulfilled ? 'fulfilled' : 'pending'}`}>
-                  {order.isFulfilled ? '✓ Fulfilled' : '⏳ Pending'}
-                </span>
+                <div className="order-actions">
+                  <span className={`status-badge ${statusBadge(order).className}`}>
+                    {statusBadge(order).text}
+                  </span>
+                  {customerCanCancel(order) && (
+                    <button
+                      className="cancel-order-button"
+                      onClick={() => handleCancelOrder(order.id)}
+                      disabled={cancelling[order.id]}
+                    >
+                      {cancelling[order.id] ? 'Cancelling...' : 'Cancel order'}
+                    </button>
+                  )}
+                </div>
               </div>
               
               <div className="order-details">
@@ -286,7 +330,7 @@ const Orders = () => {
                       const isRated = order.ratedFoodIds && order.ratedFoodIds.includes(food.id);
                       // Only allow rating once the driver has delivered it, and once per dish
                       // (the backend enforces both and answers 409 otherwise)
-                      const canRate = order.status === 'Delivered' && !isRated;
+                      const canRate = order.status === ORDER_STATUS.DELIVERED && !isRated;
                       
                       const uniqueKey = `${food.id}-${order.id}`;
 
@@ -330,7 +374,7 @@ const Orders = () => {
                                ) : (
                                  // If order is pending
                                  <span style={{ fontSize: '0.85rem', color: '#999', fontStyle: 'italic' }}>
-                                   {order.isFulfilled ? "" : "Wait for delivery"}
+                                   {isActive(order) ? "Wait for delivery" : ""}
                                  </span>
                                )
                              )}

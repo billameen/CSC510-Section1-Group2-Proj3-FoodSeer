@@ -64,6 +64,14 @@ public class Food {
      * Calorie count for this food item. Nullable: staff may not have
      * recorded a value yet, which is distinct from a food having 0 calories.
      */
+    /**
+     * False once staff delete the food. It is hidden from the menu and can't
+     * be ordered, but the row stays so past orders, ratings and allergy
+     * trace-back still find it.
+     */
+    @Column(name = "active", nullable = false, columnDefinition = "boolean default true")
+    private boolean active = true;
+
     // Integer (not int) so "no value recorded" can be represented as null
     private Integer calories;
 
@@ -247,5 +255,20 @@ public class Food {
     // plain field setter, used by FoodMapper and the service layer
     public void setCalories(final Integer calories) {
         this.calories = calories;
+    }
+
+    /**
+     * @return false if the food was deleted from the menu
+     */
+    public boolean isActive () {
+        return active;
+    }
+
+    /**
+     * @param active
+     *            false to take the food off the menu
+     */
+    public void setActive ( final boolean active ) {
+        this.active = active;
     }
 }

@@ -1,6 +1,7 @@
 // java
 package FoodSeer.service;
 
+import FoodSeer.constant.OrderStatus;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -18,6 +19,8 @@ import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.ArgumentCaptor;
 
+import FoodSeer.TestUtils;
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.dto.DriverStatsDto;
 import FoodSeer.entity.Order;
@@ -49,73 +52,72 @@ class OrderServiceImplTest {
     @Mock
     private DriverStatsService driverStatsService;
 
+    @Mock
+    private StockService stockService;
+
+    @Mock
+    private OrderStateMachine stateMachine;
+
     @InjectMocks
     private OrderServiceImpl orderService;
 
-    @Test
-    void createOrder_whenNoAuthenticatedUser_throws() {
-        // Arrange (an empty order is now rejected before the user check, so use one item)
-        Food item = new Food();
-        item.setId(5L);
-        OrderDto dto = new OrderDto(null, "Lunch");
-        dto.setFoods(List.of(item));
-        Food managed = new Food();
-        managed.setId(5L);
-        managed.setPrice(3);
-        when(foodRepository.findById(5L)).thenReturn(Optional.of(managed));
-        when(userService.getCurrentUser()).thenReturn(null);
-
-        // Act / Assert
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> orderService.createOrder(dto));
-        assertEquals("No authenticated user found", ex.getMessage());
+    private static Food food(long id, String name, int price) {
+        Food f = new Food();
+        f.setId(id);
+        f.setFoodName(name);
+        f.setPrice(price);
+        return f;
     }
 
     @Test
-    void createOrder_success_returnsMappedDto() {
-        // Arrange: create a food with id and mock repository to return a managed entity
-        Food inputFood = new Food();
-        inputFood.setId(5L);
-        inputFood.setFoodName("COFFEE");
-        inputFood.setAmount(10);
-        inputFood.setPrice(3);
+    void createOrder_whenNoAuthenticatedUser_throwsBeforeReservingStock() {
+        NewOrderRequest dto = NewOrderRequest.of("Lunch", TestUtils.foodIds(List.of(food(5L, "COFFEE", 3))));
+        when(userService.getCurrentUser()).thenReturn(null);
 
-        OrderDto request = mock(OrderDto.class);
-        when(request.getFoods()).thenReturn(List.of(inputFood));
-        when(request.getName()).thenReturn("MyOrder");
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> orderService.createOrder(dto));
+        assertEquals("No authenticated user found", ex.getMessage());
+        verifyNoInteractions(stockService);
+    }
 
-        Food managedFood = new Food();
-        managedFood.setId(5L);
-        managedFood.setFoodName("COFFEE");
-
-        when(foodRepository.findById(5L)).thenReturn(Optional.of(managedFood));
-
+    @Test
+    void createOrder_success_reservesStockAndReturnsMappedDto() {
+        NewOrderRequest request = NewOrderRequest.of("MyOrder", TestUtils.foodIds(List.of(food(5L, null, 0))));
+        Food managedFood = food(5L, "COFFEE", 3);
+        when(stockService.reserve(List.of(5L))).thenReturn(List.of(managedFood));
         User currentUser = new User();
         currentUser.setUsername("customer");
         when(userService.getCurrentUser()).thenReturn(currentUser);
-
-        Order saved = new Order();
-        saved.setId(100L);
-        saved.setName("MyOrder");
-        saved.setFoods(List.of(managedFood));
+        Order saved = new Order(100L, "MyOrder");
         when(orderRepository.save(any(Order.class))).thenReturn(saved);
 
         try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
             mocked.when(() -> OrderMapper.mapToOrderDto(saved)).thenReturn(new OrderDto(100L, "MyOrder"));
 
-            // Act
             OrderDto result = orderService.createOrder(request);
 
-            // Assert
-            assertNotNull(result);
             assertEquals(100L, result.getId());
-            assertEquals("MyOrder", result.getName());
+            verify(stockService).reserve(List.of(5L));
             verify(orderRepository, times(1)).save(any(Order.class));
         }
     }
 
     @Test
     void createOrder_rejectsAnEmptyOrder() {
-        OrderDto dto = new OrderDto(null, "Nothing");
+        NewOrderRequest dto = NewOrderRequest.of("Nothing", List.of());
+
+        assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(dto));
+        assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(new NewOrderRequest("x", null)));
+        verify(orderRepository, never()).save(any(Order.class));
+        verifyNoInteractions(stockService);
+    }
+
+    @Test
+    void createOrder_whenStockIsShort_savesNothing() {
+        NewOrderRequest dto = NewOrderRequest.of("Too much", TestUtils.foodIds(List.of(food(5L, null, 0))));
+        User currentUser = new User();
+        currentUser.setUsername("customer");
+        when(userService.getCurrentUser()).thenReturn(currentUser);
+        when(stockService.reserve(anyList())).thenThrow(new IllegalArgumentException("Not enough COFFEE in stock"));
 
         assertThrows(IllegalArgumentException.class, () -> orderService.createOrder(dto));
         verify(orderRepository, never()).save(any(Order.class));
@@ -127,32 +129,18 @@ class OrderServiceImplTest {
      */
     @Test
     void createOrder_ignoresClientPriceAndStatus() {
-        Food burger = new Food();
-        burger.setId(1L);
-        burger.setFoodName("BURGER");
-        burger.setPrice(10);
-        Food tea = new Food();
-        tea.setId(2L);
-        tea.setFoodName("TEA");
-        tea.setPrice(2);
-        when(foodRepository.findById(1L)).thenReturn(Optional.of(burger));
-        when(foodRepository.findById(2L)).thenReturn(Optional.of(tea));
+        Food burger = food(1L, "BURGER", 10);
+        Food tea = food(2L, "TEA", 2);
+        when(stockService.reserve(List.of(1L, 1L, 2L))).thenReturn(List.of(burger, burger, tea));
         User currentUser = new User();
         currentUser.setUsername("customer");
         when(userService.getCurrentUser()).thenReturn(currentUser);
         when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // Two burgers and a tea, with a forged price, delivery fee and status.
-        Food b = new Food();
-        b.setId(1L);
-        b.setPrice(0);
-        Food t = new Food();
-        t.setId(2L);
-        OrderDto request = new OrderDto(null, "Cheap lunch");
-        request.setFoods(List.of(b, b, t));
-        request.setCost(new BigDecimal("0.01"));
-        request.setDeliveryCost(BigDecimal.ZERO);
-        request.setStatus("Delivered");
+        // Two burgers and a tea. The request type has no price, delivery fee
+        // or status at all, so there is nothing to forge (see the JSON test
+        // in OrderControllerTest for a request that tries anyway).
+        NewOrderRequest request = NewOrderRequest.of("Cheap lunch", List.of(1L, 1L, 2L));
 
         orderService.createOrder(request);
 
@@ -161,8 +149,57 @@ class OrderServiceImplTest {
         // Items 10 + 10 + 2 = 22.00; delivery 30% = 6.60; total 28.60.
         assertEquals(new BigDecimal("6.60"), saved.getValue().getDeliveryCost());
         assertEquals(new BigDecimal("28.60"), saved.getValue().getCost());
-        assertEquals("Placed", saved.getValue().getStatus());
+        assertEquals(OrderStatus.PLACED, saved.getValue().getStatus());
         assertFalse(saved.getValue().getIsFulfilled());
+    }
+
+    @Test
+    void createOrder_recordsWhoWhatAndWhen() {
+        Food soup = food(3L, "SOUP", 6);
+        when(stockService.reserve(List.of(3L))).thenReturn(List.of(soup));
+        User currentUser = new User();
+        currentUser.setUsername("customer");
+        currentUser.setDietaryRestrictions("PEANUTS");
+        when(userService.getCurrentUser()).thenReturn(currentUser);
+        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
+        final java.time.LocalDateTime before = java.time.LocalDateTime.now();
+
+        orderService.createOrder(NewOrderRequest.of("Soup night", List.of(3L)));
+
+        ArgumentCaptor<Order> saved = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository).save(saved.capture());
+        Order order = saved.getValue();
+        assertEquals("Soup night", order.getName());
+        assertEquals(List.of(soup), order.getFoods());
+        assertEquals(1, order.getLines().size());
+        assertEquals("SOUP", order.getLines().get(0).getFoodName());
+        assertSame(currentUser, order.getUser());
+        assertEquals("PEANUTS", order.getAllergyRestrictions());
+        assertNotNull(order.getCreatedAt());
+        assertFalse(order.getCreatedAt().isBefore(before));
+    }
+
+    @Test
+    void createOrder_byNonCustomer_isRefusedBeforeTouchingStock() {
+        User staff = new User();
+        staff.setUsername("staff");
+        staff.setRole("ROLE_STAFF");
+        when(userService.getCurrentUser()).thenReturn(staff);
+
+        assertThrows(SecurityException.class,
+                () -> orderService.createOrder(NewOrderRequest.of("Nope", List.of(1L))));
+        verify(stockService, never()).reserve(anyList());
+    }
+
+    @Test
+    void getAllOrders_mapsEveryOrder() {
+        Order a = new Order(1L, "A");
+        Order b = new Order(2L, "B");
+        when(orderRepository.findAll()).thenReturn(List.of(a, b));
+
+        List<OrderDto> all = orderService.getAllOrders();
+
+        assertEquals(List.of(1L, 2L), all.stream().map(OrderDto::getId).toList());
     }
 
     @Test
@@ -186,93 +223,20 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void getAllOrders_and_filtersFulfilled_unfulfilled() {
-        Order o1 = new Order(); o1.setId(1L);
-        Order o2 = new Order(); o2.setId(2L);
-        when(orderRepository.findAll()).thenReturn(List.of(o1, o2));
+    void fulfilledAndActiveListsComeFromStatusQueries() {
+        Order delivered = new Order(1L, "A");
+        Order active = new Order(2L, "B");
+        when(orderRepository.findByStatus(OrderStatus.DELIVERED)).thenReturn(List.of(delivered));
+        when(orderRepository.findByStatusIn(List.of(OrderStatus.PLACED, OrderStatus.CLAIMED, OrderStatus.PICKED_UP)))
+                .thenReturn(List.of(active));
         try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
-            OrderDto d1 = new OrderDto(1L, "A"); d1.setIsFulfilled(true);
-            OrderDto d2 = new OrderDto(2L, "B"); d2.setIsFulfilled(false);
-            mocked.when(() -> OrderMapper.mapToOrderDto(o1)).thenReturn(d1);
-            mocked.when(() -> OrderMapper.mapToOrderDto(o2)).thenReturn(d2);
+            mocked.when(() -> OrderMapper.mapToOrderDto(delivered)).thenReturn(new OrderDto(1L, "A"));
+            mocked.when(() -> OrderMapper.mapToOrderDto(active)).thenReturn(new OrderDto(2L, "B"));
 
-            List<OrderDto> all = orderService.getAllOrders();
-            assertEquals(2, all.size());
-
-            List<OrderDto> fulfilled = orderService.getAllFulfilledOrders();
-            assertEquals(1, fulfilled.size());
-            assertTrue(fulfilled.get(0).getIsFulfilled());
-
-            List<OrderDto> unfulfilled = orderService.getAllUnfulfilledOrders();
-            assertEquals(1, unfulfilled.size());
-            assertFalse(unfulfilled.get(0).getIsFulfilled());
+            assertEquals(1L, orderService.getAllFulfilledOrders().get(0).getId());
+            // Active excludes CANCELLED as well as DELIVERED.
+            assertEquals(2L, orderService.getAllUnfulfilledOrders().get(0).getId());
         }
-    }
-
-    @Test
-    void fulfillOrder_success_deductsStock_and_marksFulfilled() {
-        // Arrange - order with two identical food items (counts as 2)
-        Food foo = new Food();
-        foo.setId(10L);
-        foo.setFoodName("SANDWICH");
-        foo.setAmount(5);
-        foo.setPrice(2);
-
-        Order order = new Order();
-        order.setId(50L);
-        // simulate order containing two of same Food object in the list -> counting logic will count 2
-        order.setFoods(new ArrayList<>(List.of(foo, foo)));
-
-        when(orderRepository.findById(50L)).thenReturn(Optional.of(order));
-        // foodRepository should be queried for id 10
-        Food managed = new Food();
-        managed.setId(10L);
-        managed.setFoodName("SANDWICH");
-        managed.setAmount(5);
-        when(foodRepository.findById(10L)).thenReturn(Optional.of(managed));
-        when(foodRepository.save(any(Food.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-
-        try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
-            mocked.when(() -> OrderMapper.mapToOrderDto(any(Order.class))).thenAnswer(inv -> {
-                Order o = inv.getArgument(0);
-                OrderDto dto = new OrderDto(o.getId(), o.getName());
-                dto.setIsFulfilled(o.getIsFulfilled());
-                return dto;
-            });
-
-            OrderDto dto = orderService.fulfillOrder(50L);
-
-            assertTrue(dto.getIsFulfilled());
-            // amount deducted by 2 (ordered quantity)
-            assertEquals(3, managed.getAmount());
-            verify(foodRepository, times(1)).save(managed);
-            verify(orderRepository, times(1)).save(order);
-        }
-    }
-
-    @Test
-    void fulfillOrder_notEnoughStock_throws() {
-        Food foo = new Food();
-        foo.setId(20L);
-        foo.setFoodName("TEA");
-        foo.setAmount(1);
-
-        Order order = new Order();
-        order.setId(51L);
-        // order contains two TEAs
-        order.setFoods(new ArrayList<>(List.of(foo, foo)));
-
-        when(orderRepository.findById(51L)).thenReturn(Optional.of(order));
-
-        Food managed = new Food();
-        managed.setId(20L);
-        managed.setFoodName("TEA");
-        managed.setAmount(1);
-        when(foodRepository.findById(20L)).thenReturn(Optional.of(managed));
-
-        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> orderService.fulfillOrder(51L));
-        assertTrue(ex.getMessage().contains("Not enough stock to fulfill the order for TEA"));
     }
 
     @Test
@@ -290,8 +254,9 @@ class OrderServiceImplTest {
 
         Order o = new Order(); o.setId(7L);
         when(orderRepository.findByUser(user)).thenReturn(List.of(o));
-        when(orderRepository.findByUserAndIsFulfilled(user, true)).thenReturn(List.of(o));
-        when(orderRepository.findByUserAndIsFulfilled(user, false)).thenReturn(List.of(o));
+        when(orderRepository.findByUserAndStatusIn(user, List.of(OrderStatus.DELIVERED))).thenReturn(List.of(o));
+        when(orderRepository.findByUserAndStatusIn(user,
+                List.of(OrderStatus.PLACED, OrderStatus.CLAIMED, OrderStatus.PICKED_UP))).thenReturn(List.of(o));
 
         try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
             mocked.when(() -> OrderMapper.mapToOrderDto(o)).thenReturn(new OrderDto(7L, "UOrder"));
@@ -305,84 +270,87 @@ class OrderServiceImplTest {
     void updateOrder_whenNotFound_throwsException() {
         when(orderRepository.findById(999L)).thenReturn(Optional.empty());
 
-        assertThrows(
-            ResourceNotFoundException.class,
-            () -> orderService.updateOrder(999L, "any", "Picked Up")
-        );
-
-        verify(orderRepository, never()).save(any());
+        assertThrows(ResourceNotFoundException.class, () -> orderService.updateOrder(999L, "any", "Picked Up"));
+        verifyNoInteractions(stateMachine);
     }
 
-//    @Test
-//    void updateOrder_pickedUp_setsDriver_and_persists() {
-//        Order order = new Order();
-//        order.setId(200L);
-//        order.setStatus("Placed");
-//        order.setIsFulfilled(false);
-//
-//        when(orderRepository.findById(200L)).thenReturn(Optional.of(order));
-//        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-//
-//        DriverStatsDto statsDto = new DriverStatsDto();
-//        when(driverStatsService.getDriverStats("driverA")).thenReturn(statsDto);
-//
-//        DriverStats mapped = new DriverStats();
-//        mapped.setUsername("driverA");
-//
-//        try (MockedStatic<DriverStatsMapper> mocked = mockStatic(DriverStatsMapper.class)) {
-//            mocked.when(() -> DriverStatsMapper.mapToDriverStats(statsDto)).thenReturn(mapped);
-//
-//            OrderDto dto = orderService.updateOrder(200L, "driverA", "Picked Up");
-//
-//            assertNotNull(dto);
-//            ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
-//            verify(orderRepository, times(1)).save(captor.capture());
-//            Order saved = captor.getValue();
-//            assertNotNull(saved.getDriver());
-//            assertEquals("driverA", saved.getDriver().getUsername());
-//            assertFalse(saved.getIsFulfilled());
-//        }
-//    }
+    @Test
+    void updateOrder_parsesTheStatusAndUsesTheStateMachine() {
+        Order order = new Order(201L, "Dinner");
+        User driver = new User();
+        driver.setUsername("driverB");
+        when(orderRepository.findById(201L)).thenReturn(Optional.of(order));
+        when(userService.getCurrentUser()).thenReturn(driver);
+        when(stateMachine.transition(order, OrderStatus.DELIVERED, driver)).thenReturn(order);
+
+        try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
+            mocked.when(() -> OrderMapper.mapToOrderDto(order)).thenReturn(new OrderDto(201L, "Dinner"));
+
+            // The old label and the enum name both work.
+            assertEquals(201L, orderService.updateOrder(201L, "driverB", "Delivered").getId());
+            assertEquals(201L, orderService.updateOrder(201L, "driverB", "DELIVERED").getId());
+        }
+        verify(stateMachine, times(2)).transition(order, OrderStatus.DELIVERED, driver);
+    }
 
     @Test
-    void updateOrder_delivered_bySameDriver_setsFulfilled_and_updatesEarnings() {
-        Order order = new Order();
-        order.setId(201L);
-        order.setStatus("Picked Up");
-        order.setIsFulfilled(false);
-        order.setDeliveryCost(BigDecimal.valueOf(15));
+    void updateOrder_rejectsMissingUnknownAndNonDriverStatuses() {
+        when(orderRepository.findById(5L)).thenReturn(Optional.of(new Order(5L, "x")));
 
-        DriverStats driver = new DriverStats();
-        driver.setUsername("driverB");
-        order.setDriver(driver);
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", null));
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", "Teleported"));
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", "Cancelled"));
+        assertThrows(IllegalArgumentException.class, () -> orderService.updateOrder(5L, "d", "Claimed"));
+        verifyNoInteractions(stateMachine);
+    }
 
-        when(orderRepository.findById(201L)).thenReturn(Optional.of(order));
-        when(orderRepository.save(any(Order.class))).thenAnswer(inv -> inv.getArgument(0));
-        User currentUser = new User();
-        currentUser.setUsername("driverB");
-        currentUser.setRole("ROLE_DRIVER");
+    @Test
+    void claimOrder_usesTheStateMachine() {
+        Order order = new Order(300L, "Lunch");
+        User driver = new User();
+        driver.setUsername("drv");
+        when(orderRepository.findById(300L)).thenReturn(Optional.of(order));
+        when(userService.getCurrentUser()).thenReturn(driver);
+        when(stateMachine.transition(order, OrderStatus.CLAIMED, driver)).thenReturn(order);
 
-        when(userService.getCurrentUser()).thenReturn(currentUser);
+        try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
+            mocked.when(() -> OrderMapper.mapToOrderDto(order)).thenReturn(new OrderDto(300L, "Lunch"));
+            assertEquals(300L, orderService.claimOrder(300L).getId());
+        }
+    }
 
-        OrderDto dto = orderService.updateOrder(201L, "driverB", "Delivered");
+    @Test
+    void cancelOrder_usesTheStateMachine() {
+        Order order = new Order(310L, "Lunch");
+        User customer = new User();
+        customer.setUsername("cust");
+        when(orderRepository.findById(310L)).thenReturn(Optional.of(order));
+        when(userService.getCurrentUser()).thenReturn(customer);
+        when(stateMachine.transition(order, OrderStatus.CANCELLED, customer)).thenReturn(order);
 
-        assertNotNull(dto);
-        ArgumentCaptor<Order> captor = ArgumentCaptor.forClass(Order.class);
-        verify(orderRepository, times(1)).save(captor.capture());
-        Order saved = captor.getValue();
-        assertTrue(saved.getIsFulfilled());
-        verify(driverStatsService, times(1)).updateTotalEarnings("driverB", saved.getDeliveryCost());
+        try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {
+            mocked.when(() -> OrderMapper.mapToOrderDto(order)).thenReturn(new OrderDto(310L, "Lunch"));
+            assertEquals(310L, orderService.cancelOrder(310L).getId());
+        }
+        verify(stateMachine).transition(order, OrderStatus.CANCELLED, customer);
+    }
+
+    @Test
+    void claimOrder_unknownOrderIsNotFound() {
+        when(orderRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> orderService.claimOrder(404L));
     }
 
     @Test
     void getAvailableOrders_and_getActiveOrders_mapResults() {
         Order p1 = new Order(); p1.setId(300L);
-        when(orderRepository.findByStatus("Placed")).thenReturn(List.of(p1));
+        when(orderRepository.findByStatus(OrderStatus.PLACED)).thenReturn(List.of(p1));
 
         Order active = new Order(); active.setId(301L);
         when(orderRepository.findByDriverUsernameAndStatusIn(
             eq("drv"),
-            eq(List.of("Claimed", "Picked Up"))
+            eq(List.of(OrderStatus.CLAIMED, OrderStatus.PICKED_UP))
         )).thenReturn(List.of(active));
 
         try (MockedStatic<OrderMapper> mocked = mockStatic(OrderMapper.class)) {

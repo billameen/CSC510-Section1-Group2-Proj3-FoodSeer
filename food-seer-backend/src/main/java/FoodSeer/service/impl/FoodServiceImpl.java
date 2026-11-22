@@ -1,5 +1,6 @@
 package FoodSeer.service.impl;
 
+import FoodSeer.constant.OrderStatus;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -130,52 +131,29 @@ public class FoodServiceImpl implements FoodService {
      */
     @Override
     public List<FoodDto> getAllFoods () {
-        final List<Food> foods = foodRepository.findAll();
+        // Deleted foods stay in the database for order history, but not on the menu.
+        final List<Food> foods = foodRepository.findByActiveTrue();
         return foods.stream().map( FoodMapper::mapToFoodDto ).collect( Collectors.toList() );
     }
 
     /**
-     * Deletes the food with the given id
+     * Takes a food off the menu. It is a soft delete: the row stays, so past
+     * orders keep their items, ratings keep pointing at it, and allergy
+     * trace-back can still find who ate it. Orders already placed keep their
+     * reserved stock and can still be delivered.
      *
      * @param foodId
      * food's id
      * @throws ResourceNotFoundException
      * if the food doesn't exist
-     * @throws IllegalStateException
-     * if the food is part of an unfulfilled order
      */
     @Override
     @Transactional
     public void deleteFood ( final Long foodId ) {
         final Food food = foodRepository.findById( foodId ).orElseThrow(
                 () -> new ResourceNotFoundException( "Food does not exist with id " + foodId ) );
-        
-        // Find all orders containing this food
-        final List<Order> ordersWithFood = orderRepository.findOrdersContainingFood(food);
-        
-        // Check if any unfulfilled orders contain this food
-        final List<Order> unfulfilledOrders = ordersWithFood.stream()
-                .filter(order -> !order.getIsFulfilled())
-                .collect(Collectors.toList());
-        
-        if (!unfulfilledOrders.isEmpty()) {
-            throw new IllegalStateException("Cannot delete food that is part of unfulfilled orders. " +
-                    "There are " + unfulfilledOrders.size() + " unfulfilled order(s) containing this food.");
-        }
-        
-        // Remove the food from all fulfilled orders before deletion
-        for (final Order order : ordersWithFood) {
-            // Remove the food from the order's foods list
-            order.getFoods().removeIf(f -> f.getId().equals(food.getId()));
-            // Save and flush to update the join table immediately
-            orderRepository.saveAndFlush(order);
-        }
-        
-        // Flush all pending changes to ensure join table is updated
-        orderRepository.flush();
-        
-        // Now safe to delete the food
-        foodRepository.delete( food );
+        food.setActive( false );
+        foodRepository.save( food );
     }
 
     /**
@@ -326,7 +304,7 @@ public class FoodServiceImpl implements FoodService {
 
         // 3. GATEKEEPER: Has the driver delivered it? (Staff marking an order
         // fulfilled only means it's ready; the customer hasn't eaten it yet.)
-        if (!"Delivered".equals(order.getStatus())) {
+        if (order.getStatus() != OrderStatus.DELIVERED) {
             throw new IllegalStateException("You can only rate food from an order that has been delivered.");
         }
 

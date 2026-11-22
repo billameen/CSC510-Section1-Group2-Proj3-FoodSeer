@@ -1,7 +1,10 @@
 package FoodSeer.controller;
 
+import FoodSeer.constant.OrderStatus;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.ArrayList;
@@ -19,6 +22,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import FoodSeer.TestUtils;
 import FoodSeer.dto.InventoryDto;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.User;
@@ -134,10 +141,9 @@ class OrderControllerTest {
     void testGetAndCreateOrder() throws Exception {
         final List<Food> foods = foodRepository.findAll();
 
-        final OrderDto orderDto = new OrderDto(0L, "Order1");
-        orderDto.setFoods(foods.subList(0, 2)); // use some foods
+        final NewOrderRequest orderDto = NewOrderRequest.of("Order1", TestUtils.foodIds(foods.subList(0, 2))); // use some foods
 
-        final OrderDto savedOrder = orderService.createOrder(orderDto);
+        final OrderDto savedOrder = placeAsCustomer(orderDto);
 
         // Changed in Milestone 2: a customer may no longer list every order
         // (that exposed other customers' allergies). Staff/admin only.
@@ -164,27 +170,21 @@ class OrderControllerTest {
                 .andExpect(status().isOk());
     }
 
+    // Milestone 3: staff "fulfill" is gone. Placing an order reserves its
+    // stock, and delivery is the one step that completes it.
     @Test
     @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder() throws Exception {
-        final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "Order2");
-        orderDto.setFoods(foods.subList(0, 1));
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testPlacingAnOrderReservesStock() throws Exception {
+        final Food food = foodRepository.findAll().get(0);
+        final int before = food.getAmount();
 
-        final OrderDto savedOrder = orderService.createOrder(orderDto);
-
-        mvc.perform(get("/api/orders"))
-                .andExpect(status().isOk());
-
-        mvc.perform(get("/api/orders/fulfilledOrders"))
-                .andExpect(status().isOk());
-
-        mvc.perform(post("/api/orders/fulfillOrder")
+        mvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(savedOrder))
-                        .accept(MediaType.APPLICATION_JSON))
+                        .content("{\"name\":\"Two\",\"foods\":[{\"id\":" + food.getId() + "},{\"id\":" + food.getId() + "}]}"))
                 .andExpect(status().isOk());
+
+        assertEquals(before - 2, foodRepository.findById(food.getId()).get().getAmount());
     }
 
     @Test
@@ -192,65 +192,59 @@ class OrderControllerTest {
     @WithMockUser(username = "staff", roles = "STAFF")
     void testGetUnfulfilledOrders() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "Order3");
-        orderDto.setFoods(foods.subList(1, 3));
+        final NewOrderRequest orderDto = NewOrderRequest.of("Order3", TestUtils.foodIds(foods.subList(1, 3)));
 
-        orderService.createOrder(orderDto);
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/unfulfilledOrders"))
                 .andExpect(status().isOk());
     }
 
+    /** Extra fields an old client might still send are ignored, not trusted. */
     @Test
     @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder_OrderNotFound() throws Exception {
-        OrderDto fake = new OrderDto(999L, "FakeOrder");
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testForgedPriceAndStatusInTheRequestAreIgnored() throws Exception {
+        final Food food = foodRepository.findAll().get(0);
 
-        mvc.perform(post("/api/orders/fulfillOrder")
+        mvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(fake)))
-                .andExpect(status().isPreconditionFailed()); // 412
+                        .content("{\"name\":\"Forged\",\"cost\":0.01,\"deliveryCost\":0,\"status\":\"Delivered\","
+                                + "\"isFulfilled\":true,\"foods\":[{\"id\":" + food.getId() + ",\"price\":0}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("Placed"))
+                .andExpect(jsonPath("$.isFulfilled").value(false))
+                .andExpect(jsonPath("$.foods[0].price").value(food.getPrice()))
+                .andExpect(jsonPath("$.foods[0].foodName").value(food.getFoodName()));
     }
 
     @Test
     @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder_AlreadyFulfilled() throws Exception {
-        Food food = foodRepository.findAll().get(0);
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testOrderAboveStockIsRejectedAndReservesNothing() throws Exception {
+        final Food food = foodRepository.findAll().get(0);
+        final int before = food.getAmount();
+        final StringBuilder items = new StringBuilder();
+        for (int i = 0; i <= before; i++) {
+            items.append(i == 0 ? "" : ",").append("{\"id\":").append(food.getId()).append("}");
+        }
 
-        OrderDto o = new OrderDto(0L, "FulfilledTest");
-        o.setFoods(List.of(food));
-        OrderDto saved = orderService.createOrder(o);
-
-        // Manually mark it fulfilled in DB first
-        var entity = orderRepository.findById(saved.getId()).get();
-        entity.setIsFulfilled(true);
-        orderRepository.save(entity);
-
-        mvc.perform(post("/api/orders/fulfillOrder")
+        mvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(saved)))
-                .andExpect(status().isGone()); // 410
-    }
+                        .content("{\"name\":\"Too many\",\"foods\":[" + items + "]}"))
+                .andExpect(status().isBadRequest());
 
+        assertEquals(before, foodRepository.findById(food.getId()).get().getAmount());
+    }
 
     @Test
     @Transactional
-    @WithMockUser(username = "staff", roles = "STAFF")
-    void testFulfillOrder_BadRequest() throws Exception {
-        Food food = foodRepository.findAll().get(0);
-        food.setAmount(0); // no stock, will throw inside service
-        foodRepository.save(food);
-
-        OrderDto o = new OrderDto(0L, "FailOrder");
-        o.setFoods(List.of(food));
-        OrderDto saved = orderService.createOrder(o);
-
-        mvc.perform(post("/api/orders/fulfillOrder")
+    @WithMockUser(username = "customer", roles = "CUSTOMER")
+    void testEmptyOrderIsRejected() throws Exception {
+        mvc.perform(post("/api/orders")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(TestUtils.asJsonString(saved)))
-                .andExpect(status().isBadRequest()); // 400
+                        .content("{\"name\":\"Nothing\",\"foods\":[]}"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -302,9 +296,8 @@ class OrderControllerTest {
         // Create an order for the customer user
         Food food = foodRepository.findAll().get(0);
 
-        OrderDto orderDto = new OrderDto(0L, "MyOrderTest");
-        orderDto.setFoods(new ArrayList<>(List.of(food)));
-        orderService.createOrder(orderDto);
+        NewOrderRequest orderDto = NewOrderRequest.of("MyOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/my"))
                 .andExpect(status().isOk());
@@ -318,13 +311,12 @@ class OrderControllerTest {
         // Create order
         Food food = foodRepository.findAll().get(0);
 
-        OrderDto orderDto = new OrderDto(0L, "FulfilledOrderTest");
-        orderDto.setFoods(new ArrayList<>(List.of(food)));
-        OrderDto savedOrder = orderService.createOrder(orderDto);
+        NewOrderRequest orderDto = NewOrderRequest.of("FulfilledOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
+        OrderDto savedOrder = placeAsCustomer(orderDto);
 
         // Mark fulfilled
         var entity = orderRepository.findById(savedOrder.getId()).get();
-        entity.setIsFulfilled(true);
+        entity.setStatus(OrderStatus.DELIVERED);
         orderRepository.save(entity);
 
         mvc.perform(get("/api/orders/my/fulfilled"))
@@ -339,9 +331,8 @@ class OrderControllerTest {
         // Create order (not fulfilled)
         Food food = foodRepository.findAll().get(0);
 
-        OrderDto orderDto = new OrderDto(0L, "UnfulfilledOrderTest");
-        orderDto.setFoods(new ArrayList<>(List.of(food)));
-        orderService.createOrder(orderDto);
+        NewOrderRequest orderDto = NewOrderRequest.of("UnfulfilledOrderTest", TestUtils.foodIds(new ArrayList<>(List.of(food))));
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/my/unfulfilled"))
                 .andExpect(status().isOk());
@@ -354,9 +345,8 @@ class OrderControllerTest {
     @WithMockUser(username = "driver", roles = "DRIVER")
     void testGetAvailableOrders() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "AvailableOrderTest");
-        orderDto.setFoods(foods.subList(0, 1));
-        orderService.createOrder(orderDto);
+        final NewOrderRequest orderDto = NewOrderRequest.of("AvailableOrderTest", TestUtils.foodIds(foods.subList(0, 1)));
+        placeAsCustomer(orderDto);
 
         mvc.perform(get("/api/orders/availableOrders"))
                 .andExpect(status().isOk());
@@ -367,10 +357,8 @@ class OrderControllerTest {
     @WithMockUser(username = "driver", roles = "DRIVER")
     void testGetActiveOrders_ForDriver() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "ActiveOrderTest");
-        orderDto.setStatus("Placed");
-        orderDto.setFoods(foods.subList(0, 1));
-        final OrderDto saved = orderService.createOrder(orderDto);
+        final NewOrderRequest orderDto = NewOrderRequest.of("ActiveOrderTest", TestUtils.foodIds(foods.subList(0, 1)));
+        final OrderDto saved = placeAsCustomer(orderDto);
         orderService.claimOrder(saved.getId());
 
         // Mark order as picked up by driver via service so it appears as active
@@ -385,10 +373,8 @@ class OrderControllerTest {
     @WithMockUser(username = "driver", roles = "DRIVER")
     void testUpdateOrderStatus_AsDriver() throws Exception {
         final List<Food> foods = foodRepository.findAll();
-        final OrderDto orderDto = new OrderDto(0L, "UpdateStatusTest");
-        orderDto.setStatus("Placed");
-        orderDto.setFoods(foods.subList(0, 1));
-        final OrderDto saved = orderService.createOrder(orderDto);
+        final NewOrderRequest orderDto = NewOrderRequest.of("UpdateStatusTest", TestUtils.foodIds(foods.subList(0, 1)));
+        final OrderDto saved = placeAsCustomer(orderDto);
         orderService.claimOrder(saved.getId());
 
         // Send update payload (username + status)
@@ -398,5 +384,20 @@ class OrderControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(payload))
                 .andExpect(status().isOk());
+    }
+
+    /**
+     * Places a setup order as the test customer, since only customers can
+     * place orders, then restores whoever the test is signed in as.
+     */
+    private OrderDto placeAsCustomer(final NewOrderRequest request) {
+        final var previous = SecurityContextHolder.getContext().getAuthentication();
+        try {
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("customer",
+                    null, List.of(new SimpleGrantedAuthority("ROLE_CUSTOMER"))));
+            return orderService.createOrder(request);
+        } finally {
+            SecurityContextHolder.getContext().setAuthentication(previous);
+        }
     }
 }

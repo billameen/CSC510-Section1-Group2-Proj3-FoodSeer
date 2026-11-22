@@ -1,5 +1,6 @@
 package FoodSeer.frontend;
 
+import FoodSeer.constant.OrderStatus;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Order;
 import FoodSeer.entity.User;
@@ -46,12 +47,12 @@ class DashboardTest {
         order1 = new Order(1L, "Order1");
         order1.setUser(user1);
         order1.setFoods(Arrays.asList(food1, food3));
-        order1.setIsFulfilled(false);
+        order1.setStatus(OrderStatus.PLACED);
 
         order2 = new Order(2L, "Order2");
         order2.setUser(user2);
         order2.setFoods(Arrays.asList(food2, food1));
-        order2.setIsFulfilled(true);
+        order2.setStatus(OrderStatus.DELIVERED);
     }
 
     @Test

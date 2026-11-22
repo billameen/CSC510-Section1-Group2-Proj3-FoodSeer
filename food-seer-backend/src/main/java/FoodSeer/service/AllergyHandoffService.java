@@ -1,5 +1,6 @@
 package FoodSeer.service;
 
+import FoodSeer.constant.OrderStatus;
 import FoodSeer.entity.AllergyAcknowledgment;
 import FoodSeer.entity.Order;
 import FoodSeer.entity.User;
@@ -43,10 +44,9 @@ public class AllergyHandoffService {
                 .orElseThrow(() ->
                         new IllegalArgumentException("Order not found"));
 
-        if (order.getIsFulfilled()
-                || "Delivered".equalsIgnoreCase(order.getStatus())) {
+        if (order.getStatus() != null && order.getStatus().isFinal()) {
             throw new IllegalStateException(
-                "Cannot acknowledge an order that has already been completed");
+                "Cannot acknowledge an order that has already been delivered or cancelled");
         }
 
         if (order.getAllergyRestrictions() == null

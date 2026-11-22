@@ -1,34 +1,30 @@
 package FoodSeer.service.impl;
 
+import FoodSeer.constant.OrderStatus;
+import FoodSeer.constant.UserRole;
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
 import java.util.stream.Collectors;
 
-import FoodSeer.dto.DriverStatsDto;
-import FoodSeer.entity.DriverStats;
-import FoodSeer.mapper.DriverStatsMapper;
-import FoodSeer.service.AllergyHandoffService;
-import FoodSeer.service.DriverStatsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import FoodSeer.dto.InventoryDto;
+import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Order;
+import FoodSeer.entity.OrderLine;
 import FoodSeer.exception.ResourceNotFoundException;
 import FoodSeer.mapper.OrderMapper;
 import FoodSeer.entity.User;
-import FoodSeer.repositories.FoodRepository;
 import FoodSeer.repositories.OrderRepository;
-import FoodSeer.service.InventoryService;
 import FoodSeer.service.OrderPricing;
 import FoodSeer.service.OrderService;
+import FoodSeer.service.OrderStateMachine;
+import FoodSeer.service.StockService;
 import FoodSeer.service.UserService;
 
 /**
@@ -37,76 +33,72 @@ import FoodSeer.service.UserService;
 @Service
 public class OrderServiceImpl implements OrderService {
 
-    Logger logger = LoggerFactory.getLogger(OrderServiceImpl.class);
-    /** Repository for food items. */
-    @Autowired
-    private FoodRepository foodRepository;
+    /** Orders still on their way: placed, claimed or picked up. Not delivered or cancelled. */
+    private static final List<OrderStatus> ACTIVE = List.of(OrderStatus.PLACED, OrderStatus.CLAIMED,
+            OrderStatus.PICKED_UP);
 
-    /** Repository for allergy handoff */
-    @Autowired
-    private AllergyHandoffService allergyHandoffService;
+    Logger logger = LoggerFactory.getLogger(OrderServiceImpl.class);
 
     /** Repository for orders. */
     @Autowired
     private OrderRepository orderRepository;
 
-    /** Inventory service for stock management. */
-    @Autowired
-    private InventoryService inventoryService;
-
     /** User service for getting current user. */
     @Autowired
     private UserService userService;
 
+    /** Reserves stock when an order is placed. */
     @Autowired
-    private DriverStatsService driverStatsService;
+    private StockService stockService;
+
+    /** Every status change goes through here. */
+    @Autowired
+    private OrderStateMachine stateMachine;
 
     /**
-     * Creates an order for the signed-in customer. Only the order's name and
-     * the ids of its foods are taken from the request. Cost, delivery cost and
-     * status are set here, so a client can't choose its own price or skip
-     * ahead in the delivery flow.
+     * Creates an order for the signed-in customer and reserves its stock, all
+     * in one transaction: if any item is missing or short, nothing is
+     * reserved and nothing is saved (400). Only the order's name and the ids
+     * of its foods are taken from the request. Cost, delivery cost and status
+     * are set here, so a client can't choose its own price or skip ahead in
+     * the delivery flow.
      *
-     * @param orderDto order to create
+     * @param request order to create
      * @return created order
      */
     @Override
-    public OrderDto createOrder(final OrderDto orderDto) {
-        if (orderDto == null || orderDto.getFoods() == null || orderDto.getFoods().isEmpty()) {
+    @Transactional
+    public OrderDto createOrder(final NewOrderRequest request) {
+        if (request == null || request.foods() == null || request.foods().isEmpty()) {
             throw new IllegalArgumentException("An order needs at least one item.");
         }
-
-        // Load actual Food entities from database (managed entities), so the
-        // prices come from the menu and not from the request.
-        final List<Food> foods = new ArrayList<>();
-        for (final Food food : orderDto.getFoods()) {
-            if (food == null || food.getId() == null) {
-                throw new IllegalArgumentException("Every item in an order needs a food id.");
-            }
-            final Food f = foodRepository.findById(food.getId())
-                    .orElseThrow(() -> new ResourceNotFoundException("A Food item does not exist within the order."));
-            foods.add(f);
+        final User currentUser = userService.getCurrentUser();
+        if (currentUser == null) {
+            throw new IllegalStateException("No authenticated user found");
         }
+        // Same rule as the controller's @PreAuthorize, so the service is safe on its own.
+        if (UserRole.fromAuthority(currentUser.getRole()) != UserRole.CUSTOMER) {
+            throw new SecurityException("Only customers can place orders.");
+        }
+
+        // Validates every line, then decrements; prices come from the menu.
+        final List<Food> foods = stockService.reserve(request.foodIds());
 
         final BigDecimal itemsTotal = OrderPricing.itemsTotal(foods);
         final BigDecimal deliveryCost = OrderPricing.deliveryCost(itemsTotal);
 
         // Create order entity directly (not using mapper to avoid creating new Food objects)
         final Order order = new Order();
-        order.setName(orderDto.getName());
+        order.setName(request.name());
         order.setFoods(foods);
-        order.setIsFulfilled(false);
+        // Snapshot each unit as it is now, so later menu edits don't rewrite this order.
+        order.setLines(foods.stream().map(OrderLine::of).collect(Collectors.toList()));
         order.setCost(itemsTotal.add(deliveryCost));
         order.setDeliveryCost(deliveryCost);
-        order.setStatus("Placed");
+        order.setStatus(OrderStatus.PLACED);
         // stamp the creation time so CalorieBudgetServiceImpl can later tell which orders were placed "today"
         order.setCreatedAt(java.time.LocalDateTime.now());
         
-        // Set the current user as the owner of this order
-        final User currentUser = userService.getCurrentUser();
-        if (currentUser == null) {
-            throw new IllegalStateException("No authenticated user found");
-        }
         order.setUser(currentUser);
         order.setAllergyRestrictions(currentUser.getDietaryRestrictions());
         
@@ -122,6 +114,7 @@ public class OrderServiceImpl implements OrderService {
      * @throws ResourceNotFoundException if the order doesn't exist
      */
     @Override
+    @Transactional(readOnly = true)
     public OrderDto getOrderById(final Long orderId) {
         final Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order does not exist with id " + orderId));
@@ -134,81 +127,10 @@ public class OrderServiceImpl implements OrderService {
      * @return all the orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAllOrders() {
         final List<Order> orders = orderRepository.findAll();
         return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
-    }
-
-    /**
-     * Fulfills the order by checking food availability and updating inventory.
-     *
-     * @param orderId The id of the order to fulfill
-     * @return the updated OrderDto
-     */
-    @Override
-    public OrderDto fulfillOrder(final long orderId) {
-        final Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order does not exist with id " + orderId));
-
-        // Count how many of each food is in the order
-        final Map<Long, Long> foodCounts = order.getFoods().stream()
-                .collect(Collectors.groupingBy(Food::getId, Collectors.counting()));
-
-        // Check inventory and deduct quantities
-        for (final Map.Entry<Long, Long> entry : foodCounts.entrySet()) {
-            final Long foodId = entry.getKey();
-            final Long quantityNeeded = entry.getValue();
-            
-            final Food food = foodRepository.findById(foodId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Food not found with id " + foodId));
-            
-            // Check if enough stock
-            if (food.getAmount() < quantityNeeded) {
-                throw new IllegalArgumentException("Not enough stock to fulfill the order for " + food.getFoodName() 
-                        + ". Need: " + quantityNeeded + ", Available: " + food.getAmount());
-            }
-            
-            // Deduct from inventory
-            food.setAmount((int) (food.getAmount() - quantityNeeded));
-            foodRepository.save(food);
-        }
-
-        order.setIsFulfilled(true);
-        final Order savedOrder = orderRepository.save(order);
-        return OrderMapper.mapToOrderDto(savedOrder);
-    }
-
-    /**
-     * Checks if all ingredients/foods for an order item are available.
-     *
-     * @param inventoryDto The current inventory
-     * @param food         The food item to check
-     * @return true if available, false otherwise
-     */
-    private boolean checkFoodAvailability(final InventoryDto inventoryDto, final Food food) {
-        final Map<String, Food> inventoryMap = inventoryDto.getFoods().stream()
-                .collect(Collectors.toMap(Food::getFoodName, f -> f));
-
-        final Food inventoryFood = inventoryMap.get(food.getFoodName());
-        return inventoryFood != null && food.getAmount() <= inventoryFood.getAmount();
-    }
-
-    /**
-     * Deducts the ordered food amount from the inventory.
-     *
-     * @param inventoryDto The inventory data
-     * @param food         The food item to deduct
-     */
-    private void updateInventory(final InventoryDto inventoryDto, final Food food) {
-        final Map<String, Food> inventoryMap = inventoryDto.getFoods().stream()
-                .collect(Collectors.toMap(Food::getFoodName, f -> f));
-
-        final Food inventoryFood = inventoryMap.get(food.getFoodName());
-        if (inventoryFood != null) {
-            inventoryFood.setAmount(inventoryFood.getAmount() - food.getAmount());
-        }
-
-        inventoryService.updateInventory(inventoryDto);
     }
 
     /**
@@ -217,22 +139,20 @@ public class OrderServiceImpl implements OrderService {
      * @return list of fulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAllFulfilledOrders() {
-        return getAllOrders().stream()
-                .filter(OrderDto::getIsFulfilled)
-                .collect(Collectors.toList());
+        return map(orderRepository.findByStatus(OrderStatus.DELIVERED));
     }
 
     /**
-     * Returns all unfulfilled orders.
+     * Returns orders that are still active (placed, claimed or picked up).
      *
      * @return list of unfulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAllUnfulfilledOrders() {
-        return getAllOrders().stream()
-                .filter(o -> !o.getIsFulfilled())
-                .collect(Collectors.toList());
+        return map(orderRepository.findByStatusIn(ACTIVE));
     }
 
     /**
@@ -241,6 +161,7 @@ public class OrderServiceImpl implements OrderService {
      * @return list of current user's orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getCurrentUserOrders() {
         final User currentUser = userService.getCurrentUser();
         if (currentUser == null) {
@@ -257,138 +178,98 @@ public class OrderServiceImpl implements OrderService {
      * @return list of current user's fulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getCurrentUserFulfilledOrders() {
         final User currentUser = userService.getCurrentUser();
         if (currentUser == null) {
             throw new IllegalStateException("No authenticated user found");
         }
         
-        final List<Order> orders = orderRepository.findByUserAndIsFulfilled(currentUser, true);
-        return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
+        return map(orderRepository.findByUserAndStatusIn(currentUser, List.of(OrderStatus.DELIVERED)));
     }
 
     /**
-     * Returns unfulfilled orders for the current authenticated user.
+     * Returns the current user's orders that are still active (placed,
+     * claimed or picked up).
      *
      * @return list of current user's unfulfilled orders
      */
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getCurrentUserUnfulfilledOrders() {
         final User currentUser = userService.getCurrentUser();
         if (currentUser == null) {
             throw new IllegalStateException("No authenticated user found");
         }
         
-        final List<Order> orders = orderRepository.findByUserAndIsFulfilled(currentUser, false);
+        return map(orderRepository.findByUserAndStatusIn(currentUser, ACTIVE));
+    }
+
+    /**
+     * A driver claims a placed order. If two drivers claim at once, the
+     * optimistic lock lets exactly one win; the other gets 409.
+     */
+    @Override
+    @Transactional
+    public OrderDto claimOrder(final Long orderId) {
+        final Order order = load(orderId);
+        return OrderMapper.mapToOrderDto(stateMachine.transition(order, OrderStatus.CLAIMED,
+                userService.getCurrentUser()));
+    }
+
+    /**
+     * The assigned driver moves an order to PICKED_UP or DELIVERED. A missing
+     * or unknown status is a 400; a move the state machine doesn't allow is a
+     * 409; anyone but the assigned driver is a 403.
+     *
+     * @param username ignored; the signed-in user is the actor
+     */
+    @Override
+    @Transactional
+    public OrderDto updateOrder(final Long orderId, final String username, final String status) {
+        final Order order = load(orderId);
+        final OrderStatus to = OrderStatus.parse(status);
+        if (to != OrderStatus.PICKED_UP && to != OrderStatus.DELIVERED) {
+            throw new IllegalArgumentException("Drivers can set an order to Picked Up or Delivered.");
+        }
+        return OrderMapper.mapToOrderDto(stateMachine.transition(order, to, userService.getCurrentUser()));
+    }
+
+    /**
+     * Cancels an order; the state machine checks who may cancel it and
+     * releases its stock.
+     */
+    @Override
+    @Transactional
+    public OrderDto cancelOrder(final Long orderId) {
+        final Order order = load(orderId);
+        return OrderMapper.mapToOrderDto(stateMachine.transition(order, OrderStatus.CANCELLED,
+                userService.getCurrentUser()));
+    }
+
+    private static List<OrderDto> map(final List<Order> orders) {
         return orders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
     }
 
-    @Override
-    public OrderDto claimOrder(final Long orderId) {
-        final User currentUser = userService.getCurrentUser();
-
-        if (currentUser == null
-                || !"ROLE_DRIVER".equals(currentUser.getRole())) {
-            throw new SecurityException("Only drivers can claim orders");
-        }
-
-        final Order order = orderRepository.findById(orderId)
-            .orElseThrow(() ->
-                    new ResourceNotFoundException(
-                            "Order does not exist with id " + orderId));
-
-        if (!"Placed".equals(order.getStatus())
-                || order.getDriver() != null) {
-            throw new IllegalStateException(
-                "Order is not available to claim");
-        }
-
-        order.setDriver(
-            DriverStatsMapper.mapToDriverStats(
-                    driverStatsService.getDriverStats(
-                            currentUser.getUsername())));
-
-        order.setStatus("Claimed");
-
-        return OrderMapper.mapToOrderDto(orderRepository.save(order));
+    private Order load(final Long orderId) {
+        return orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order does not exist with id " + orderId));
     }
 
     @Override
-    public OrderDto updateOrder(final Long orderId, String username, String status) {
-        Order order = orderRepository.findById(orderId)
-            .orElseThrow(() ->
-                    new ResourceNotFoundException(
-                            "Order not found: " + orderId));
-
-        User currentUser = userService.getCurrentUser();
-
-        if (currentUser == null
-                || !"ROLE_DRIVER".equals(currentUser.getRole())) {
-            throw new SecurityException("Only drivers can update delivery status");
-        }
-
-        String authenticatedUsername = currentUser.getUsername();
-
-        if (order.getDriver() == null
-                || !authenticatedUsername.equals(order.getDriver().getUsername())) {
-            throw new SecurityException("You are not assigned to this order");
-        }
-
-        if ("Picked Up".equals(status)) {
-            if (!"Claimed".equals(order.getStatus())) {
-                throw new IllegalStateException("Order must be claimed before pickup");
-            }
-
-            boolean hasRestrictions =
-                order.getAllergyRestrictions() != null
-                && !order.getAllergyRestrictions().isBlank();
-
-            if (hasRestrictions) {
-                if (!allergyHandoffService.isAcknowledged(orderId, "STAFF")) {
-                    throw new IllegalStateException(
-                        "Restaurant staff must acknowledge allergy warning first");
-                }
-
-                if (!allergyHandoffService.isAcknowledged(orderId, "DRIVER")) {
-                    throw new IllegalStateException(
-                        "Driver must acknowledge allergy warning before pickup");
-                    }
-                }
-
-                order.setStatus("Picked Up");
-
-            } else if ("Delivered".equals(status)) {
-                if (!"Picked Up".equals(order.getStatus())) {
-                    throw new IllegalStateException(
-                        "Order must be picked up before delivery");
-                }
-
-                order.setStatus("Delivered");
-                order.setIsFulfilled(true);
-
-                driverStatsService.updateTotalEarnings(
-                    authenticatedUsername, order.getDeliveryCost());
-
-            } else {
-                throw new IllegalArgumentException("Invalid delivery status");
-            }
-
-            orderRepository.save(order);
-            return OrderMapper.mapToOrderDto(order);
-        }
-
-    @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getAvailableOrders(){
-        List<Order> availableOrders = orderRepository.findByStatus("Placed");
+        List<Order> availableOrders = orderRepository.findByStatus(OrderStatus.PLACED);
         return availableOrders.stream().map(OrderMapper::mapToOrderDto).collect(Collectors.toList());
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<OrderDto> getActiveOrders(String username) {
         List<Order> activeOrders =
             orderRepository.findByDriverUsernameAndStatusIn(
                 username,
-                List.of("Claimed", "Picked Up")
+                List.of(OrderStatus.CLAIMED, OrderStatus.PICKED_UP)
             );
 
         return activeOrders.stream()

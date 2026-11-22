@@ -31,6 +31,7 @@ import FoodSeer.dto.IncidentDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Incident;
 import FoodSeer.entity.Notification;
+import FoodSeer.constant.OrderStatus;
 import FoodSeer.entity.Order;
 import FoodSeer.entity.User;
 import FoodSeer.exception.ResourceNotFoundException;
@@ -117,6 +118,20 @@ public class TraceServiceImplTest {
         assertEquals(Arrays.asList("alice"), result.getNotifiedUsernames());
         assertEquals(1, result.getNotifications().size());
         verify(notificationRepository).saveAll(result.getNotifications());
+    }
+
+    @Test
+    public void testCancelledOrdersAreNotExposed() {
+        final Food cookie = food(10, "COOKIES", "PEANUTS");
+        final Order eaten = order(1, user("alice", "PEANUTS"), NOON, cookie);
+        final Order cancelled = order(2, user("carol", "PEANUTS"), NOON.plusMinutes(5), cookie);
+        cancelled.setStatus(OrderStatus.CANCELLED);
+        stubFood(cookie, eaten, cancelled);
+
+        final TraceResult result = restaurantReport("peanut", 10L);
+
+        assertEquals(Arrays.asList(1L), result.getExposedOrderIds());
+        assertEquals(Arrays.asList("alice"), result.getNotifiedUsernames());
     }
 
     @Test

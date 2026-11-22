@@ -73,7 +73,11 @@ public class InventoryServiceImpl implements InventoryService {
             return createInventory(newInventoryDto);
         }
 
-        return InventoryMapper.mapToInventoryDto(inventoryList.get(0));
+        // Deleted foods aren't part of the inventory anyone sees.
+        final InventoryDto inventory = InventoryMapper.mapToInventoryDto(inventoryList.get(0));
+        inventory.setFoods(inventory.getFoods().stream().filter(Food::isActive)
+                .collect(java.util.stream.Collectors.toList()));
+        return inventory;
     }
 
     /**
@@ -99,9 +103,15 @@ public class InventoryServiceImpl implements InventoryService {
         final List<Food> foodsToAdd = new ArrayList<>();
 
         for (final Food f : inventoryDto.getFoods()) {
+            // Deleted foods stay linked to the inventory row but are never
+            // updated; updateFood can't see them and would answer 404.
+            if (!f.isActive()) {
+                continue;
+            }
             final int size = inventory.getFoods().size();
             for (int index = 0; index < size; index++) {
-                if (inventory.getFoods().get(index).getFoodName().equals(f.getFoodName())) {
+                final Food existing = inventory.getFoods().get(index);
+                if (existing.isActive() && existing.getFoodName().equals(f.getFoodName())) {
 
                     // Update existing food item
                     // pass the existing food's calories through so inventory-driven updates don't wipe it out

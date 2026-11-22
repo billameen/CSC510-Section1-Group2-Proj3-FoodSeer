@@ -1,12 +1,15 @@
 package FoodSeer.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -75,7 +78,7 @@ class UserManagementGuardsTest {
         // Refused before the admin count matters.
 
         assertThrows(IllegalStateException.class, () -> service.deleteUser(1L));
-        verify(users, never()).deleteById(anyLong());
+        assertTrue(admin.isActive());
     }
 
     @Test
@@ -83,17 +86,29 @@ class UserManagementGuardsTest {
         final User other = User.builder().id(3).username("admin2").email("b@x.test").password("h").role("ROLE_ADMIN")
                 .build();
         when(users.findById(3L)).thenReturn(Optional.of(other));
-        when(users.countByRole("ROLE_ADMIN")).thenReturn(1L);
+        when(users.countByRoleAndActiveTrue("ROLE_ADMIN")).thenReturn(1L);
 
         assertThrows(IllegalStateException.class, () -> service.deleteUser(3L));
-        verify(users, never()).deleteById(anyLong());
+        assertTrue(other.isActive());
     }
 
     @Test
-    void anotherUserCanBeDeleted() {
+    void deletingDeactivatesTheAccountAndKeepsItsOrders() {
         service.deleteUser(2L);
 
-        verify(users).deleteById(2L);
+        // Milestone 3: soft delete. The row and its orders stay for history and trace-back.
+        assertFalse(staff.isActive());
+        verify(users).save(staff);
+        verify(users, never()).deleteById(anyLong());
+        verifyNoInteractions(orders, mealLogs);
+    }
+
+    @Test
+    void aDeletedUserIsNotFoundAgain() {
+        staff.setActive(false);
+
+        assertThrows(ResourceNotFoundException.class, () -> service.deleteUser(2L));
+        assertEquals(null, service.findById(2L));
     }
 
     @Test
@@ -105,7 +120,7 @@ class UserManagementGuardsTest {
 
     @Test
     void lastAdminCannotBeDemoted() {
-        when(users.countByRole("ROLE_ADMIN")).thenReturn(1L);
+        when(users.countByRoleAndActiveTrue("ROLE_ADMIN")).thenReturn(1L);
 
         assertThrows(IllegalStateException.class, () -> service.updateUserRole(1L, "staff"));
         assertEquals("ROLE_ADMIN", admin.getRole());

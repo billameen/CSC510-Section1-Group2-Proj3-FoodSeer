@@ -1,4 +1,4 @@
-import { request, login, deleteUser } from './api';
+import { request, login, deleteUser, cancelOrder } from './api';
 
 const jsonResponse = (status, body) => ({
   ok: status >= 200 && status < 300,
@@ -116,5 +116,23 @@ describe('request()', () => {
     fetch.mockResolvedValue(textResponse(200, ''));
 
     await expect(deleteUser(4)).resolves.toEqual({ success: true });
+  });
+
+  test('cancelOrder posts to the cancel endpoint', async () => {
+    localStorage.setItem('token', 'abc');
+    fetch.mockResolvedValue(jsonResponse(200, { id: 7, status: 'Cancelled' }));
+
+    await expect(cancelOrder(7)).resolves.toMatchObject({ status: 'Cancelled' });
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('http://localhost:8080/api/orders/7/cancel');
+    expect(options.method).toBe('POST');
+  });
+
+  test('cancelOrder passes on the reason for a 409', async () => {
+    localStorage.setItem('token', 'abc');
+    fetch.mockResolvedValue(jsonResponse(409, { message: 'Order is already Claimed.' }));
+
+    await expect(cancelOrder(7)).rejects.toMatchObject({ status: 409, message: 'Order is already Claimed.' });
   });
 });

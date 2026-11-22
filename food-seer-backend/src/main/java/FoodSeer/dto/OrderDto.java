@@ -1,17 +1,16 @@
 package FoodSeer.dto;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashSet; // Added import
+import java.util.HashSet;
 import java.util.List;
-import java.util.Set;     // Added import
-
-import FoodSeer.entity.DriverStats;
-import FoodSeer.entity.Food;
+import java.util.Set;
 
 /**
- * Data Transfer Object for Order.
- * Used to transfer Order data between the client and server.
+ * An order in API responses. It carries plain values and nested records only,
+ * never entities: the items are OrderLineDto snapshots and the driver is just
+ * a username. Placing an order uses NewOrderRequest instead.
  */
 public class OrderDto {
 
@@ -21,10 +20,10 @@ public class OrderDto {
     /** Order name */
     private String name;
 
-    /** List of foods in the order */
-    private List<Food> foods;
+    /** Each unit as it was when the order was placed */
+    private List<OrderLineDto> foods;
 
-    /** Boolean used to track if the order has been fulfilled */
+    /** True once delivered; derived from the status */
     private boolean isFulfilled;
 
     private BigDecimal cost;
@@ -33,24 +32,19 @@ public class OrderDto {
 
     private BigDecimal rating;
 
-    private DriverStats driverStats;
+    /** The assigned driver's username, or null before a driver claims it */
+    private String driverUsername;
+
+    /** Who placed it */
+    private String customerUsername;
 
     private BigDecimal deliveryCost;
 
-    /**
-     * Set of IDs representing foods in this order that have already been rated.
-     * Used by frontend to disable rating buttons.
-     */
+    private LocalDateTime createdAt;
+
     private String allergyRestrictions;
 
-    public String getAllergyRestrictions() {
-        return allergyRestrictions;
-    }
-
-    public void setAllergyRestrictions(String allergyRestrictions) {
-        this.allergyRestrictions = allergyRestrictions;
-    }
-    
+    /** Foods in this order the customer already rated (one rating per dish per order) */
     private Set<Long> ratedFoodIds;
 
     /**
@@ -58,8 +52,7 @@ public class OrderDto {
      */
     public OrderDto() {
         this.foods = new ArrayList<>();
-        this.isFulfilled = false;
-        this.ratedFoodIds = new HashSet<>(); // Initialize to avoid NullPointerException
+        this.ratedFoodIds = new HashSet<>();
     }
 
     /**
@@ -69,110 +62,47 @@ public class OrderDto {
      * @param name the order name
      */
     public OrderDto(final Long id, final String name) {
+        this();
         this.id = id;
         this.name = name;
-        this.foods = new ArrayList<>();
-        this.isFulfilled = false;
-        this.ratedFoodIds = new HashSet<>();
     }
 
-    /**
-     * Gets the order ID.
-     *
-     * @return the order ID
-     */
     public Long getId() {
         return id;
     }
 
-    /**
-     * Sets the order ID.
-     *
-     * @param id the order ID
-     */
     public void setId(final Long id) {
         this.id = id;
     }
 
-    /**
-     * Gets the order name.
-     *
-     * @return the order name
-     */
     public String getName() {
         return name;
     }
 
-    /**
-     * Sets the order name.
-     *
-     * @param name the order name
-     */
     public void setName(final String name) {
         this.name = name;
     }
 
-    /**
-     * Adds a food item to the order.
-     *
-     * @param food the food to add
-     */
-    public void addFood(final Food food) {
-        this.foods.add(food);
+    public List<OrderLineDto> getFoods() {
+        return foods;
     }
 
-    /**
-     * Gets the list of foods in the order.
-     *
-     * @return the list of foods
-     */
-    public List<Food> getFoods() {
-        return this.foods;
-    }
-
-    /**
-     * Sets the list of foods in the order.
-     *
-     * @param foods the list of foods
-     */
-    public void setFoods(final List<Food> foods) {
+    public void setFoods(final List<OrderLineDto> foods) {
         this.foods = foods;
     }
 
-    /**
-     * Checks if the order is fulfilled.
-     *
-     * @return true if fulfilled, false otherwise
-     */
     public boolean getIsFulfilled() {
         return isFulfilled;
     }
 
-    /**
-     * Sets whether the order is fulfilled.
-     *
-     * @param isFulfilled true if fulfilled, false otherwise
-     */
     public void setIsFulfilled(final boolean isFulfilled) {
         this.isFulfilled = isFulfilled;
     }
 
-    // --- NEW GETTERS AND SETTERS ---
-
-    /**
-     * Gets the list of IDs for foods that have already been rated.
-     *
-     * @return Set of Long IDs
-     */
     public Set<Long> getRatedFoodIds() {
         return ratedFoodIds;
     }
 
-    /**
-     * Sets the list of rated food IDs.
-     *
-     * @param ratedFoodIds the set of IDs
-     */
     public void setRatedFoodIds(final Set<Long> ratedFoodIds) {
         this.ratedFoodIds = ratedFoodIds;
     }
@@ -181,7 +111,7 @@ public class OrderDto {
         return cost;
     }
 
-    public void setCost(BigDecimal cost) {
+    public void setCost(final BigDecimal cost) {
         this.cost = cost;
     }
 
@@ -189,7 +119,7 @@ public class OrderDto {
         return rating;
     }
 
-    public void setRating(BigDecimal rating) {
+    public void setRating(final BigDecimal rating) {
         this.rating = rating;
     }
 
@@ -197,23 +127,47 @@ public class OrderDto {
         return status;
     }
 
-    public void setStatus(String status) {
+    public void setStatus(final String status) {
         this.status = status;
     }
 
-    public DriverStats getDriverStats() {
-        return driverStats;
+    public String getDriverUsername() {
+        return driverUsername;
     }
 
-    public void setDriverStats(DriverStats driverStats) {
-        this.driverStats = driverStats;
+    public void setDriverUsername(final String driverUsername) {
+        this.driverUsername = driverUsername;
+    }
+
+    public String getCustomerUsername() {
+        return customerUsername;
+    }
+
+    public void setCustomerUsername(final String customerUsername) {
+        this.customerUsername = customerUsername;
     }
 
     public BigDecimal getDeliveryCost() {
         return deliveryCost;
     }
 
-    public void setDeliveryCost(BigDecimal deliveryCost) {
+    public void setDeliveryCost(final BigDecimal deliveryCost) {
         this.deliveryCost = deliveryCost;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(final LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public String getAllergyRestrictions() {
+        return allergyRestrictions;
+    }
+
+    public void setAllergyRestrictions(final String allergyRestrictions) {
+        this.allergyRestrictions = allergyRestrictions;
     }
 }

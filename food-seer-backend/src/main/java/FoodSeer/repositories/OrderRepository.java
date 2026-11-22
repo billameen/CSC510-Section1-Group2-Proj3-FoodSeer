@@ -1,5 +1,7 @@
 package FoodSeer.repositories;
 
+import FoodSeer.constant.OrderStatus;
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -27,13 +29,21 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByUser(User user);
     
     /**
-     * Find all fulfilled orders for a specific user.
+     * Finds a user's orders in any of the given statuses.
      *
      * @param user the user
-     * @param isFulfilled true for fulfilled orders
-     * @return list of fulfilled orders belonging to the user
+     * @param statuses the statuses to include
+     * @return matching orders
      */
-    List<Order> findByUserAndIsFulfilled(User user, boolean isFulfilled);
+    List<Order> findByUserAndStatusIn(User user, Collection<OrderStatus> statuses);
+
+    /**
+     * Finds orders in any of the given statuses.
+     *
+     * @param statuses the statuses to include
+     * @return matching orders
+     */
+    List<Order> findByStatusIn(Collection<OrderStatus> statuses);
     
     /**
      * Find all orders that contain a specific food.
@@ -44,9 +54,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT o FROM Order o JOIN o.foods f WHERE f = :food")
     List<Order> findOrdersContainingFood(@Param("food") Food food);
 
-    List<Order> findByStatus(String status);
+    List<Order> findByStatus(OrderStatus status);
 
-    List<Order> findByDriverUsernameAndStatus(@Param("username") String username, @Param("status") String status);
+    List<Order> findByDriverUsernameAndStatus(@Param("username") String username, @Param("status") OrderStatus status);
 
-    List<Order> findByDriverUsernameAndStatusIn(String username, List<String> statuses);
+    List<Order> findByDriverUsernameAndStatusIn(String username, List<OrderStatus> statuses);
 }
