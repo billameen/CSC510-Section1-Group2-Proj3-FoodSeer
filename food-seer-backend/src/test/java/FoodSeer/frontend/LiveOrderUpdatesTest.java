@@ -5,6 +5,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +20,7 @@ import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -25,6 +29,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.entity.DriverStats;
+import FoodSeer.live.OutboxDispatcher;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.User;
 import FoodSeer.repositories.DriverStatsRepository;
@@ -41,9 +46,14 @@ import io.github.bonigarcia.wdm.WebDriverManager;
  * picks up and delivers while the customer's My Orders page follows each step
  * without being reloaded. Needs the frontend on :3000, like the other
  * Selenium tests.
+ *
+ * It uses the same Spring configuration as the other Selenium tests so they
+ * share one server on port 8080 (a second configuration would start a second
+ * server on the same port). Scheduling is off in tests, so this test runs the
+ * outbox dispatcher itself, every 200 ms like the real schedule.
  */
-@SpringBootTest ( webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT,
-        properties = "app.live.scheduling-enabled=true" )
+@SpringBootTest ( webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT )
+@AutoConfigureMockMvc
 class LiveOrderUpdatesTest {
 
     private static final String  BASE_URL = "http://localhost:3000/";
@@ -66,6 +76,10 @@ class LiveOrderUpdatesTest {
     private OrderService          orderService;
     @Autowired
     private PasswordEncoder       passwordEncoder;
+    @Autowired
+    private OutboxDispatcher      dispatcher;
+
+    private ScheduledExecutorService dispatching;
 
     private final List<ChromeDriver> browsers = new ArrayList<>();
     private Food                     food;
@@ -93,10 +107,21 @@ class LiveOrderUpdatesTest {
                 null, List.of( new SimpleGrantedAuthority( "ROLE_CUSTOMER" ) ) ) );
         orderId = orderService.createOrder( NewOrderRequest.of( "Live UI order", List.of( food.getId() ) ) ).getId();
         SecurityContextHolder.clearContext();
+
+        dispatching = Executors.newSingleThreadScheduledExecutor();
+        dispatching.scheduleWithFixedDelay( () -> {
+            try {
+                dispatcher.dispatch();
+            }
+            catch ( final RuntimeException e ) {
+                // Retried on the next tick, like the real schedule.
+            }
+        }, 0, 200, TimeUnit.MILLISECONDS );
     }
 
     @AfterEach
     void tearDown () {
+        dispatching.shutdownNow();
         browsers.forEach( ChromeDriver::quit );
         cleanUp();
     }
