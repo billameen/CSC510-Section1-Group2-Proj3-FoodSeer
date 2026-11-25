@@ -59,6 +59,35 @@ def test_a_driver_cannot_use_the_assistant():
     assert status == 403, body
 
 
+def test_a_blank_message_is_rejected(customer):
+    """A blank question is a 400 and never reaches the model, so this needs no Ollama."""
+    status, body = api_request("POST", "/api/chat", {"message": "   "}, token=customer)
+
+    assert status == 400, body
+
+
+@pytest.mark.skipif(not OLLAMA_UP, reason="no Ollama on localhost:11434")
+def test_suggested_dishes_are_real_menu_dishes(customer):
+    """Every card in the answer is a dish on the menu, with its id.
+
+    The response always has reply text, a list of dish cards, and a notice that
+    is only set when a suggestion was left out (see docs/chatbot-safety.md).
+    """
+    status, body = api_request(
+        "POST", "/api/chat", {"message": "what should I eat?", "history": []},
+        token=customer, timeout=120,
+    )
+
+    assert status == 200, body
+    assert body["message"].strip()
+    assert isinstance(body["foods"], list)
+    assert "notice" in body
+    _, menu = api_request("GET", "/api/foods", token=customer)
+    menu_ids = {food["id"] for food in menu}
+    for card in body["foods"]:
+        assert card["id"] in menu_ids, card
+
+
 @pytest.mark.skipif(not OLLAMA_UP, reason="no Ollama on localhost:11434")
 def test_the_assistant_answers_a_greeting(customer):
     """This proves the main success scenario, when the model is actually there."""
