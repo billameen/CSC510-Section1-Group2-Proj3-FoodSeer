@@ -449,11 +449,20 @@ export const deleteUser = async (id) => {
 };
 
 // Chat API calls
-export const sendChatMessage = async (message) => {
+/**
+ * Asks the food assistant.
+ *
+ * @param {string} message what the customer typed
+ * @param {Array<{role: string, content: string}>} history earlier turns,
+ *   oldest first; the backend keeps only the last few
+ * @returns {Promise<{message: string, foods: object[], notice: string|null}>}
+ *   a 503 (assistant unavailable) rejects with error.status === 503
+ */
+export const sendChatMessage = async (message, history = []) => {
   try {
     return await request('/api/chat', {
       method: 'POST',
-      body: { message },
+      body: { message, history },
       fallbackError: 'Failed to send message to AI',
     });
   } catch (error) {
