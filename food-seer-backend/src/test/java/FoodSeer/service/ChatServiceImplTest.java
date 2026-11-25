@@ -1,5 +1,6 @@
 package FoodSeer.service;
 
+import FoodSeer.chat.ChatModelClient;
 import FoodSeer.dto.ChatRequestDto;
 import FoodSeer.dto.ChatResponseDto;
 import FoodSeer.entity.Food;
@@ -24,17 +25,15 @@ public class ChatServiceImplTest {
 
     private ChatServiceImpl chatService;
     private FoodRepository foodRepository;
+    private ChatModelClient chatModelClient;
 
     @BeforeEach
     void setup() throws Exception {
         foodRepository = Mockito.mock(FoodRepository.class);
+        chatModelClient = Mockito.mock(ChatModelClient.class);
+        when(chatModelClient.complete(anyList())).thenReturn("Hi there!");
 
-        chatService = new ChatServiceImpl();
-
-        // Inject private field 'foodRepository' via reflection
-        Field repoField = ChatServiceImpl.class.getDeclaredField("foodRepository");
-        repoField.setAccessible(true);
-        repoField.set(chatService, foodRepository);
+        chatService = new ChatServiceImpl(foodRepository, chatModelClient);
     }
 
     @Test
@@ -94,8 +93,8 @@ public class ChatServiceImplTest {
         ChatRequestDto req = new ChatRequestDto();
         req.setMessage("Cause error");
 
-        // Force exception inside repo
-        when(foodRepository.findByActiveTrue()).thenThrow(new RuntimeException("DB error"));
+        // Force an exception from the model
+        when(chatModelClient.complete(anyList())).thenThrow(new RuntimeException("model error"));
 
         ChatResponseDto res = chatService.sendMessage(req);
 
