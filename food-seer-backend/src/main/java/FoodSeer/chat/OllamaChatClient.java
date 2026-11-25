@@ -45,6 +45,12 @@ public class OllamaChatClient implements ChatModelClient {
     /** Longest wait for a connection, even when the answer timeout is longer. */
     static final int MAX_CONNECT_TIMEOUT_MS = 5000;
 
+    /**
+     * Sampling temperature. Low, because the answer must be valid JSON that
+     * only uses ids from the menu, not creative writing.
+     */
+    static final double TEMPERATURE = 0.2;
+
     /** Shown when the model cannot answer for any reason we do not name. */
     static final String UNAVAILABLE = "The food assistant is unavailable right now. Please try again in a moment.";
 
@@ -149,6 +155,8 @@ public class OllamaChatClient implements ChatModelClient {
         final ObjectNode request = objectMapper.createObjectNode();
         request.put("model", model);
         request.put("stream", false);
+        request.set("format", replySchema());
+        request.putObject("options").put("temperature", TEMPERATURE);
         final ArrayNode messages = request.putArray("messages");
         for (final ChatTurn turn : conversation) {
             final ObjectNode message = messages.addObject();
@@ -161,6 +169,26 @@ public class OllamaChatClient implements ChatModelClient {
             // Only plain strings go in, so this cannot happen in practice.
             throw new IllegalStateException("Could not build the Ollama request", e);
         }
+    }
+
+    /**
+     * The JSON schema Ollama's structured output uses to constrain the answer:
+     * {"reply": string, "foodIds": [integer]}. {@link ChatReplyParser} still
+     * parses defensively, because older Ollama versions and small models do
+     * not always follow it.
+     *
+     * @return the schema
+     */
+    ObjectNode replySchema() {
+        final ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        final ObjectNode properties = schema.putObject("properties");
+        properties.putObject("reply").put("type", "string");
+        final ObjectNode foodIds = properties.putObject("foodIds");
+        foodIds.put("type", "array");
+        foodIds.putObject("items").put("type", "integer");
+        schema.putArray("required").add("reply").add("foodIds");
+        return schema;
     }
 
     /**

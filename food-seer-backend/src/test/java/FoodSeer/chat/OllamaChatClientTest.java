@@ -87,6 +87,22 @@ class OllamaChatClientTest {
     }
 
     @Test
+    void asksForJsonInTheReplyAndFoodIdsShape() throws Exception {
+        final AtomicReference<String> sent = new AtomicReference<>();
+        final String url = startFakeOllama(200, "{\"message\":{\"content\":\"{}\"}}", 0, sent);
+
+        new OllamaChatClient(url, "m", 2000).complete(List.of(ChatTurn.user("hi")));
+
+        final JsonNode request = new ObjectMapper().readTree(sent.get());
+        final JsonNode format = request.get("format");
+        assertEquals("object", format.get("type").asText());
+        assertEquals("string", format.get("properties").get("reply").get("type").asText());
+        assertEquals("integer", format.get("properties").get("foodIds").get("items").get("type").asText());
+        assertEquals("[\"reply\",\"foodIds\"]", format.get("required").toString());
+        assertEquals(OllamaChatClient.TEMPERATURE, request.get("options").get("temperature").asDouble());
+    }
+
+    @Test
     void trailingSlashesInTheUrlAreIgnored() {
         final OllamaChatClient client = new OllamaChatClient("http://localhost:11434//", "m", 1000);
         assertEquals("http://localhost:11434/api/chat", client.getChatUrl());
