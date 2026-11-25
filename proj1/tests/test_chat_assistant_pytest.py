@@ -48,9 +48,9 @@ def test_the_assistant_cannot_be_used_without_logging_in():
 def test_a_driver_cannot_use_the_assistant():
     """This proves extension 1a.
 
-    DRIVER is missing from this endpoint's role list while it is present on the
-    order endpoints. Passing here documents the inconsistency rather than
-    endorsing it -- see the use case.
+    Drivers are left out on purpose: the assistant recommends dishes to order
+    and only customers can place orders. See the Chat section of
+    docs/authorization-matrix.md.
     """
     _, driver = register_and_login("driver", "hungry_driver")
 
