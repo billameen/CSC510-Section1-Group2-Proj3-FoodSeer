@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -237,6 +238,31 @@ class ChatServiceImplTest {
 
         // GlobalExceptionHandler turns this into 503.
         assertThrows(ChatUnavailableException.class, () -> chatService.sendMessage(new ChatRequestDto("hello")));
+    }
+
+    @Test
+    void blankMessagesAreRejectedWithoutCallingTheModel() {
+        for (final String blank : Arrays.asList(null, "", "   ")) {
+            assertThrows(IllegalArgumentException.class, () -> chatService.sendMessage(new ChatRequestDto(blank)));
+        }
+        assertThrows(IllegalArgumentException.class, () -> chatService.sendMessage(null));
+        verify(model, never()).complete(anyList());
+    }
+
+    @Test
+    void overlongMessagesAreRejectedWithoutCallingTheModel() {
+        final String tooLong = "a".repeat(ChatServiceImpl.MAX_MESSAGE_LENGTH + 1);
+
+        assertThrows(IllegalArgumentException.class, () -> chatService.sendMessage(new ChatRequestDto(tooLong)));
+        verify(model, never()).complete(anyList());
+    }
+
+    @Test
+    void aMessageAtTheLimitIsAccepted() {
+        modelAnswers("{\"reply\": \"ok\", \"foodIds\": []}");
+
+        assertEquals("ok", chatService
+                .sendMessage(new ChatRequestDto("a".repeat(ChatServiceImpl.MAX_MESSAGE_LENGTH))).getMessage());
     }
 
     @Test

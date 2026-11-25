@@ -45,6 +45,9 @@ import FoodSeer.service.UserService;
 @Service
 public class ChatServiceImpl implements ChatService {
 
+    /** Longest question accepted, in characters. */
+    public static final int MAX_MESSAGE_LENGTH = 1000;
+
     /** Reply used when the model suggested dishes but wrote no text. */
     static final String DEFAULT_SUGGESTION_REPLY = "Here's what I'd suggest.";
 
@@ -115,12 +118,23 @@ public class ChatServiceImpl implements ChatService {
     /**
      * {@inheritDoc}
      *
+     * @throws IllegalArgumentException
+     *             if the message is blank or too long, which the API reports
+     *             as 400
      * @throws FoodSeer.exception.ChatUnavailableException
      *             if the model cannot answer, which the API reports as 503
      */
     @Override
     public ChatResponseDto sendMessage(final ChatRequestDto chatRequest) {
-        final String message = chatRequest.getMessage() == null ? "" : chatRequest.getMessage().trim();
+        final String message = chatRequest == null || chatRequest.getMessage() == null ? ""
+                : chatRequest.getMessage().trim();
+        if (message.isEmpty()) {
+            throw new IllegalArgumentException("Please type a message for the assistant.");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Messages to the assistant can be at most " + MAX_MESSAGE_LENGTH + " characters.");
+        }
 
         final User user = userService.getCurrentUser();
         final String restrictions = user == null ? null : user.getDietaryRestrictions();
