@@ -1849,6 +1849,12 @@ code {
   color: #842029;
 }
 
+.chat-slow-hint {
+  margin: 0 0 0 52px;
+  font-size: 13px;
+  color: #6c757d;
+}
+
 .chat-notice {
   margin: 8px 0 0 0;
   padding-top: 8px;

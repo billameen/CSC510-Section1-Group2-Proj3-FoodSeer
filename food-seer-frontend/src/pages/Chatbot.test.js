@@ -1,9 +1,15 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import Chatbot, { historyFor } from './Chatbot';
+import Chatbot, {
+  historyFor,
+  SLOW_AFTER_MS,
+  UNAVAILABLE_MESSAGE,
+  OFFLINE_MESSAGE,
+  GENERIC_ERROR_MESSAGE,
+} from './Chatbot';
 import { sendChatMessage, getCurrentUser } from '../services/api';
 
 jest.mock('../services/api', () => ({
@@ -163,6 +169,104 @@ describe('Chatbot', () => {
         { role: 'assistant', content: 'Salad!', foods: [SALAD], notice: null }
       );
     });
+  });
+});
+
+describe('Chatbot errors and loading', () => {
+  const httpError = (status, message) => Object.assign(new Error(message), { status });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorage.clear();
+    getCurrentUser.mockResolvedValue({ id: 7, username: 'sam' });
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    console.error.mockRestore();
+    jest.useRealTimers();
+  });
+
+  test('a 503 says the assistant is unavailable instead of showing the raw error', async () => {
+    sendChatMessage.mockRejectedValue(
+      httpError(503, "The food assistant's model (qwen2.5:1.5b) is not installed on the server.")
+    );
+    renderPage();
+    await screen.findByText(/I'm FoodSeer/);
+
+    await ask('hello');
+
+    expect(await screen.findByText(UNAVAILABLE_MESSAGE)).toBeInTheDocument();
+    expect(screen.queryByText(/qwen2.5/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Browse All Foods' })).toBeEnabled();
+  });
+
+  test('the input works again after a 503 and errors are not sent as history', async () => {
+    sendChatMessage
+      .mockRejectedValueOnce(httpError(503, 'down'))
+      .mockResolvedValueOnce({ message: 'Back now.', foods: [], notice: null });
+    renderPage();
+    await screen.findByText(/I'm FoodSeer/);
+
+    await ask('hello');
+    await screen.findByText(UNAVAILABLE_MESSAGE);
+    await ask('hello again');
+
+    expect(await screen.findByText('Back now.')).toBeInTheDocument();
+    const secondHistory = sendChatMessage.mock.calls[1][1];
+    expect(secondHistory.map((t) => t.content)).not.toContain(UNAVAILABLE_MESSAGE);
+    expect(secondHistory.map((t) => t.content)).toContain('hello');
+  });
+
+  test('a network failure says FoodSeer could not be reached', async () => {
+    sendChatMessage.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderPage();
+    await screen.findByText(/I'm FoodSeer/);
+
+    await ask('hello');
+
+    expect(await screen.findByText(OFFLINE_MESSAGE)).toBeInTheDocument();
+  });
+
+  test('a 400 shows the backend reason', async () => {
+    sendChatMessage.mockRejectedValue(httpError(400, 'Messages to the assistant can be at most 1000 characters.'));
+    renderPage();
+    await screen.findByText(/I'm FoodSeer/);
+
+    await ask('x');
+
+    expect(await screen.findByText('Messages to the assistant can be at most 1000 characters.'))
+      .toBeInTheDocument();
+  });
+
+  test('any other error gets a generic message', async () => {
+    sendChatMessage.mockRejectedValue(httpError(500, 'stack trace here'));
+    renderPage();
+    await screen.findByText(/I'm FoodSeer/);
+
+    await ask('x');
+
+    expect(await screen.findByText(GENERIC_ERROR_MESSAGE)).toBeInTheDocument();
+  });
+
+  test('a slow answer shows the typing indicator, then a still-thinking hint', async () => {
+    sendChatMessage.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    await screen.findByText(/I'm FoodSeer/);
+    jest.useFakeTimers();
+
+    fireEvent.change(screen.getByPlaceholderText("Tell me what you're craving..."), { target: { value: 'hi' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+
+    expect(screen.getByLabelText('The assistant is typing')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Tell me what you're craving...")).toBeDisabled();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(SLOW_AFTER_MS);
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Still thinking');
   });
 });
 

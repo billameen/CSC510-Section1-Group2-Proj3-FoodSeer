@@ -13,6 +13,22 @@ const legacyStateKey = (userId) => `chatbotState_${userId}`;
 
 const welcomeMessages = () => [{ role: 'assistant', content: WELCOME }];
 
+// After this long without an answer, say the assistant is still working.
+export const SLOW_AFTER_MS = 10000;
+
+export const UNAVAILABLE_MESSAGE =
+  "The assistant is unavailable right now. You can still browse all foods while it's down.";
+export const OFFLINE_MESSAGE = "I couldn't reach FoodSeer. Check your connection and try again.";
+export const GENERIC_ERROR_MESSAGE = 'Sorry, something went wrong. Please try again.';
+
+/** Turns a failed request into what the assistant says about it. */
+export const errorMessageFor = (err) => {
+  if (err?.status === 503) return UNAVAILABLE_MESSAGE;
+  if (err?.status === 400 && err.message) return err.message;
+  if (err?.status === undefined) return OFFLINE_MESSAGE;
+  return GENERIC_ERROR_MESSAGE;
+};
+
 /**
  * The turns the backend should see: the customer's messages and the
  * assistant's real replies, without error messages.
@@ -30,6 +46,7 @@ const Chatbot = () => {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSlow, setIsSlow] = useState(false);
   const [stateLoaded, setStateLoaded] = useState(false);
 
   // Load saved state
@@ -70,6 +87,16 @@ const Chatbot = () => {
     localStorage.setItem(stateKey(currentUserId), JSON.stringify({ version: STATE_VERSION, messages }));
   }, [messages, currentUserId, stateLoaded]);
 
+  // Say so when an answer is taking a while (the model may still be loading)
+  useEffect(() => {
+    if (!isLoading) {
+      setIsSlow(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setIsSlow(true), SLOW_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
+
   // Auto scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
@@ -100,7 +127,7 @@ const Chatbot = () => {
       console.error(err);
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: 'Sorry, something went wrong.', error: true },
+        { role: 'assistant', content: errorMessageFor(err), error: true },
       ]);
     } finally {
       setIsLoading(false);
@@ -180,10 +207,15 @@ const Chatbot = () => {
         {isLoading && (
           <div className="message assistant">
             <div className="message-avatar">🤖</div>
-            <div className="message-content typing">
+            <div className="message-content typing" aria-label="The assistant is typing">
               <span></span><span></span><span></span>
             </div>
           </div>
+        )}
+        {isLoading && isSlow && (
+          <p className="chat-slow-hint" role="status">
+            Still thinking... the first answer after the assistant starts can take up to a minute.
+          </p>
         )}
 
         <div ref={messagesEndRef} />
