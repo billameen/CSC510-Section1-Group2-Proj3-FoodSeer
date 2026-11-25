@@ -163,6 +163,27 @@ class ChatServiceImplTest {
     }
 
     @Test
+    void aPlainTextReplyNamingAnUnsafeDishIsReplacedToo() {
+        modelAnswers("You should definitely get the cookies!");
+
+        final ChatResponseDto response = chatService.sendMessage(new ChatRequestDto("dessert?"));
+
+        assertTrue(response.getFoods().isEmpty());
+        assertFalse(response.getMessage().toLowerCase().contains("cookie"), response.getMessage());
+    }
+
+    @Test
+    void aReplyNamingADishThatIsSafeForThisCustomerIsKept() {
+        signedInWith("shellfish");
+        modelAnswers("{\"reply\": \"The cookies are a treat.\", \"foodIds\": [2]}");
+
+        final ChatResponseDto response = chatService.sendMessage(new ChatRequestDto("dessert?"));
+
+        assertEquals("The cookies are a treat.", response.getMessage());
+        assertEquals(List.of(2L), cardIds(response));
+    }
+
+    @Test
     void textOutsideJsonIsShownWithoutCards() {
         modelAnswers("I think the steak would be great tonight!");
 

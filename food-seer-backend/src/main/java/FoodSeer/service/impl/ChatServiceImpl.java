@@ -164,25 +164,42 @@ public class ChatServiceImpl implements ChatService {
                     parsed.foodIds().size(), result.dropped());
         }
 
+        final List<Food> unsafeForCustomer = new ArrayList<>();
+        for (final Food food : menu) {
+            if (!ChatSafetyFilter.isSafeFor(food, restrictions)) {
+                unsafeForCustomer.add(food);
+            }
+        }
+
         final List<ChatFoodDto> cards = new ArrayList<>();
         for (final Food food : result.safeFoods()) {
             cards.add(ChatFoodDto.of(food));
         }
-        return new ChatResponseDto(replyText(parsed.reply(), result), cards, ChatSafetyFilter.noticeFor(result));
+        return new ChatResponseDto(replyText(parsed.reply(), result.safeFoods(), unsafeForCustomer), cards,
+                ChatSafetyFilter.noticeFor(result));
     }
 
     /**
      * Picks the text to show. The model's reply is used as is, unless it is
-     * empty or it names a dish that was just blocked for the customer's
-     * allergies, so the text never recommends what the cards left out.
+     * empty or it names any menu dish the customer is allergic to. That covers
+     * replies that are plain text instead of JSON too, so the text can never
+     * recommend a dish the cards would have blocked.
+     *
+     * @param reply
+     *            the model's reply text
+     * @param cards
+     *            the dishes that passed the safety filter
+     * @param unsafeForCustomer
+     *            every menu dish with an allergen on the customer's list
+     * @return the text to show
      */
-    static String replyText(final String reply, final ChatSafetyFilter.Result result) {
-        final boolean hasCards = !result.safeFoods().isEmpty();
+    static String replyText(final String reply, final List<Food> cards, final List<Food> unsafeForCustomer) {
+        final boolean hasCards = !cards.isEmpty();
         if (reply == null || reply.isBlank()) {
             return hasCards ? DEFAULT_SUGGESTION_REPLY : EMPTY_REPLY;
         }
-        for (final Food blocked : result.blockedForAllergen()) {
-            if (mentions(reply, blocked.getFoodName())) {
+        for (final Food unsafe : unsafeForCustomer) {
+            if (mentions(reply, unsafe.getFoodName())) {
                 return hasCards ? UNSAFE_REPLY_WITH_OPTIONS : UNSAFE_REPLY_WITHOUT_OPTIONS;
             }
         }
