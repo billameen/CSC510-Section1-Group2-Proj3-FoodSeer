@@ -4,8 +4,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import FoodSeer.chat.ChatHistory;
 import FoodSeer.chat.ChatModelClient;
 import FoodSeer.chat.ChatTurn;
 import FoodSeer.dto.ChatRequestDto;
@@ -19,6 +21,7 @@ public class ChatServiceImpl implements ChatService {
 
     private final FoodRepository foodRepository;
     private final ChatModelClient chatModelClient;
+    private final int historyTurns;
 
     /**
      * Creates the service.
@@ -27,10 +30,15 @@ public class ChatServiceImpl implements ChatService {
      *            the menu
      * @param chatModelClient
      *            the chat model, Ollama in production
+     * @param historyTurns
+     *            how many earlier messages to send with each question
+     *            (foodseer.chat.history-turns, default 6)
      */
-    public ChatServiceImpl(final FoodRepository foodRepository, final ChatModelClient chatModelClient) {
+    public ChatServiceImpl(final FoodRepository foodRepository, final ChatModelClient chatModelClient,
+            @Value("${foodseer.chat.history-turns:" + ChatHistory.DEFAULT_MAX_TURNS + "}") final int historyTurns) {
         this.foodRepository = foodRepository;
         this.chatModelClient = chatModelClient;
+        this.historyTurns = historyTurns;
     }
 
     /**
@@ -47,6 +55,7 @@ public class ChatServiceImpl implements ChatService {
             "Only provide food recommendations when the user explicitly asks for it. " +
             "Do not add emojis, marketing text, or default food suggestions. Keep answers concise and factual."
         ));
+        conversation.addAll(ChatHistory.recent(chatRequest.getHistory(), historyTurns));
         conversation.add(ChatTurn.user(chatRequest.getMessage()));
 
         // Determine if user explicitly asked for a recommendation

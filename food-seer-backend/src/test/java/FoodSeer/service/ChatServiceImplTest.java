@@ -1,6 +1,8 @@
 package FoodSeer.service;
 
 import FoodSeer.chat.ChatModelClient;
+import FoodSeer.chat.ChatTurn;
+import FoodSeer.dto.ChatTurnDto;
 import FoodSeer.dto.ChatRequestDto;
 import FoodSeer.dto.ChatResponseDto;
 import FoodSeer.entity.Food;
@@ -34,7 +36,7 @@ public class ChatServiceImplTest {
         chatModelClient = Mockito.mock(ChatModelClient.class);
         when(chatModelClient.complete(anyList())).thenReturn("Hi there!");
 
-        chatService = new ChatServiceImpl(foodRepository, chatModelClient);
+        chatService = new ChatServiceImpl(foodRepository, chatModelClient, 6);
     }
 
     @Test
@@ -111,6 +113,23 @@ public class ChatServiceImplTest {
         assertNotNull(res);
         String resp = extractResponse(res);
         assertNotNull(resp);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void test_RecentHistoryIsSentBeforeTheNewMessage() {
+        ChatRequestDto req = new ChatRequestDto("anything cheaper?");
+        req.setHistory(List.of(new ChatTurnDto("user", "something sweet"),
+                new ChatTurnDto("assistant", "Try the chocolate cake.")));
+
+        chatService.sendMessage(req);
+
+        org.mockito.ArgumentCaptor<List<ChatTurn>> sent = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(chatModelClient).complete(sent.capture());
+        List<ChatTurn> conversation = sent.getValue();
+        assertEquals(ChatTurn.user("something sweet"), conversation.get(1));
+        assertEquals(ChatTurn.assistant("Try the chocolate cake."), conversation.get(2));
+        assertEquals(ChatTurn.user("anything cheaper?"), conversation.get(3));
     }
 
     // Helper that attempts to extract a String response from ChatResponseDto using reflection.
