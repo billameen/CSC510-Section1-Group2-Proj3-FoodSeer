@@ -129,15 +129,17 @@ the logs. If an admin already exists, its password is left alone.
 curl -fsSL https://ollama.com/install.sh | sh
 ```
 
-#### Step 2: Pull the gemma3:1b Model
+#### Step 2: Pull the qwen2.5:1.5b Model
 
 After installation, open a terminal and run:
 
 ```bash
-ollama pull gemma3:1b
+ollama pull qwen2.5:1.5b
 ```
 
-This will download the model (~1GB). Wait for it to complete.
+This will download the model (~1GB). Wait for it to complete. This is the
+model the backend asks for by default; if you pull a different one, set
+`foodseer.ollama.model` to match (see Step 4).
 
 #### Step 3: Start Ollama Server
 
@@ -147,7 +149,7 @@ Ollama should start automatically after installation. To verify it's running:
 ollama list
 ```
 
-You should see `gemma3:1b` in the list.
+You should see `qwen2.5:1.5b` in the list.
 
 If Ollama isn't running, start it:
 ```bash
@@ -155,6 +157,22 @@ ollama serve
 ```
 
 The server will run on `http://localhost:11434` by default.
+
+#### Step 4 (optional): Point the backend at a different Ollama or model
+
+The defaults work with the steps above, so most people can skip this. To
+change them, add any of these to `application.properties`, or set the
+environment variable instead:
+
+| Property | Environment variable | Default | What it does |
+| :- | :- | :- | :- |
+| `foodseer.ollama.url` | `FOODSEER_OLLAMA_URL` | `http://localhost:11434` | Where Ollama listens |
+| `foodseer.ollama.model` | `FOODSEER_OLLAMA_MODEL` | `qwen2.5:1.5b` | Which pulled model to use |
+| `foodseer.ollama.timeout-ms` | `FOODSEER_OLLAMA_TIMEOUTMS` | `60000` | Longest wait for an answer, in milliseconds |
+
+If Ollama is down, too slow, or missing the model, `POST /api/chat` answers
+503 and the chat page says the assistant is unavailable. The rest of the app
+keeps working.
 
 
 ### 4. Build and Run Backend
@@ -460,23 +478,20 @@ Solutions:
 
 ### Chatbot-Specific Issues
 
-#### "Failed to send message to AI"
-- **Cause:** Ollama is not running
-- **Fix:** Run `ollama serve` in a terminal
+#### "The assistant is unavailable right now" (503 from `/api/chat`)
+- **Cause:** Ollama is not running, or it is on a different port or host
+- **Fix:** Run `ollama serve` in a terminal, or set `foodseer.ollama.url`
+- **Verify:** `curl http://localhost:11434` should answer "Ollama is running"
 
-#### "No response from AI"
-- **Cause:** Model not downloaded
-- **Fix:** Run `ollama pull gemma3:1b`
+#### 503 saying the model "is not installed on the server"
+- **Cause:** The model in `foodseer.ollama.model` has not been pulled
+- **Fix:** Run `ollama pull qwen2.5:1.5b` (or the model you configured)
 
-#### "Error communicating with Ollama"
-- **Cause:** Ollama running on different port
-- **Fix:** Check Ollama is on port 11434 (default)
-- **Verify:** `curl http://localhost:11434`
-
-#### Backend 500 Error for Chat
-- **Cause:** Backend can't reach Ollama
-- **Fix:** Ensure Ollama is running
-- **Test:** `curl http://localhost:11434`
+#### 503 after a long wait
+- **Cause:** The model took longer than `foodseer.ollama.timeout-ms` to answer.
+  The first question after Ollama starts is the slowest, because the model
+  has to load.
+- **Fix:** Ask again, or raise `foodseer.ollama.timeout-ms`
 
 #### AI Assistant Link Not Visible
 - **Cause:** Not logged in as customer
@@ -503,7 +518,7 @@ cd CSC510
 # 2. Setup MySQL database
 
 # 3. Install and start Ollama
-ollama pull gemma3:1b
+ollama pull qwen2.5:1.5b
 ollama serve
 
 # 4. Start backend

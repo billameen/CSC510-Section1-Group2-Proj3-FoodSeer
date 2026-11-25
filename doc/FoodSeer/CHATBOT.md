@@ -22,6 +22,6 @@
 3. **Food Filtering:** Foods are filtered based on:
    - Your budget (budget/moderate/premium/no-limit)
    - Your dietary restrictions (vegan/vegetarian/gluten-free)
-4. **AI Analysis:** The filtered food list + your responses are sent to Ollama's gemma3:1b model
+4. **AI Analysis:** The filtered food list + your responses are sent to Ollama's qwen2.5:1.5b model
 5. **Recommendation:** The AI selects the best food match and explains why it's perfect for you
 6. **Quick Order:** You can order directly from the recommendation

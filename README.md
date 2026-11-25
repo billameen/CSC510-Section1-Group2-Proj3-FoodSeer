@@ -101,7 +101,7 @@ Drivers have autonomy over their deliveries and earnings visibility.
 ## 🚀 Key Features
 
 - **Interactive Quiz System** to generate meal recommendations  
-- **Ollama-powered AI chatbot** for conversational food suggestions  
+- **Ollama-powered AI chatbot** for conversational food suggestions, using the local `qwen2.5:1.5b` model by default (see [INSTALL.md](INSTALL.md#3-how-to-set-up-ollama))  
 - **Clean, tab-based UI** for seamless navigation between ordering, recommendations, and account features  
 - **Back-end systems** for inventory, ordering, session management, and user accounts  
 - **Automated tests** with **85%+ coverage** across frontend & backend  
