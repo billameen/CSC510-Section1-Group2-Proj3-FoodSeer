@@ -45,8 +45,10 @@ public final class ChatSafetyFilter {
      *            {@link #MAX_SUGGESTIONS}
      * @param dropped
      *            how many suggestions were removed, by reason
+     * @param blockedForAllergen
+     *            the suggested dishes removed because of an allergen
      */
-    public record Result(List<Food> safeFoods, Map<DropReason, Integer> dropped) {
+    public record Result(List<Food> safeFoods, Map<DropReason, Integer> dropped, List<Food> blockedForAllergen) {
 
         /**
          * @param reason
@@ -84,7 +86,7 @@ public final class ChatSafetyFilter {
             final String restrictions) {
         final Map<DropReason, Integer> dropped = new EnumMap<>(DropReason.class);
         if (proposedIds == null || proposedIds.isEmpty()) {
-            return new Result(List.of(), Collections.unmodifiableMap(dropped));
+            return new Result(List.of(), Collections.unmodifiableMap(dropped), List.of());
         }
 
         final Map<Long, Food> byId = new HashMap<>();
@@ -97,6 +99,7 @@ public final class ChatSafetyFilter {
         }
 
         final List<Food> safe = new ArrayList<>();
+        final List<Food> blocked = new ArrayList<>();
         for (final Long id : new LinkedHashSet<>(proposedIds)) {
             final Food food = id == null ? null : byId.get(id);
             final DropReason reason;
@@ -109,13 +112,16 @@ public final class ChatSafetyFilter {
             } else {
                 reason = null;
             }
+            if (reason == DropReason.ALLERGEN) {
+                blocked.add(food);
+            }
             if (reason != null) {
                 dropped.merge(reason, 1, Integer::sum);
             } else if (safe.size() < MAX_SUGGESTIONS) {
                 safe.add(food);
             }
         }
-        return new Result(List.copyOf(safe), Collections.unmodifiableMap(dropped));
+        return new Result(List.copyOf(safe), Collections.unmodifiableMap(dropped), List.copyOf(blocked));
     }
 
     /**

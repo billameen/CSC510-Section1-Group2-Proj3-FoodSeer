@@ -85,6 +85,7 @@ class ChatSafetyFilterTest {
 
         assertEquals(List.of(1L), ids(result.safeFoods()));
         assertEquals(1, result.droppedFor(DropReason.ALLERGEN));
+        assertEquals(List.of(2L), ids(result.blockedForAllergen()));
         assertEquals("I left out 1 suggestion that contains something on your allergy list.",
                 ChatSafetyFilter.noticeFor(result));
     }

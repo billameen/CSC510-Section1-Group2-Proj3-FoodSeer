@@ -275,19 +275,30 @@ curl -X POST http://localhost:8080/auth/login \
 }
 ```
 
-**Chat Request:**
+**Chat Request** (`history` is optional: earlier turns, oldest first; only the last few are used):
 ```json
 {
-  "message": "I'm feeling tired and want comfort food"
+  "message": "anything cheaper?",
+  "history": [
+    { "role": "user", "content": "I'm tired and want comfort food" },
+    { "role": "assistant", "content": "The chicken noodle soup would be cozy." }
+  ]
 }
 ```
 
-**Chat Response:**
+**Chat Response** (`foods` are already checked against the menu, stock and the customer's saved allergies; `notice` is set only when a suggestion was left out):
 ```json
 {
-  "message": "Based on your preferences, I recommend..."
+  "message": "The vegetable soup is cheaper and just as warm.",
+  "foods": [
+    { "id": 15, "foodName": "VEGETABLE SOUP", "price": 6, "calories": 180, "allergies": ["SOY"] }
+  ],
+  "notice": null
 }
 ```
+
+If the model is down, too slow, or not installed, the response is `503` with
+`{"message": "..."}` instead.
 
 ---
 
