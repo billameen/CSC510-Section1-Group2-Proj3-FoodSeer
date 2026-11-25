@@ -33,39 +33,40 @@ public class ChatServiceImpl implements ChatService {
         this.chatModelClient = chatModelClient;
     }
 
+    /**
+     * {@inheritDoc}
+     *
+     * @throws FoodSeer.exception.ChatUnavailableException
+     *             if the model cannot answer, which the API reports as 503
+     */
     @Override
     public ChatResponseDto sendMessage(final ChatRequestDto chatRequest) {
-        try {
-            final List<ChatTurn> conversation = new ArrayList<>();
-            conversation.add(ChatTurn.system(
-                "You are FoodSeer AI. Respond naturally to greetings and normal conversation. " +
-                "Only provide food recommendations when the user explicitly asks for it. " +
-                "Do not add emojis, marketing text, or default food suggestions. Keep answers concise and factual."
-            ));
-            conversation.add(ChatTurn.user(chatRequest.getMessage()));
+        final List<ChatTurn> conversation = new ArrayList<>();
+        conversation.add(ChatTurn.system(
+            "You are FoodSeer AI. Respond naturally to greetings and normal conversation. " +
+            "Only provide food recommendations when the user explicitly asks for it. " +
+            "Do not add emojis, marketing text, or default food suggestions. Keep answers concise and factual."
+        ));
+        conversation.add(ChatTurn.user(chatRequest.getMessage()));
 
-            // Determine if user explicitly asked for a recommendation
-            String msgLower = chatRequest.getMessage().toLowerCase();
-            if (msgLower.contains("what should i eat") ||
-                msgLower.contains("recommend food") ||
-                msgLower.contains("suggest food")) {
+        // Determine if user explicitly asked for a recommendation
+        String msgLower = chatRequest.getMessage().toLowerCase();
+        if (msgLower.contains("what should i eat") ||
+            msgLower.contains("recommend food") ||
+            msgLower.contains("suggest food")) {
 
-                // Fetch menu from DB
-                List<Food> foods = foodRepository.findByActiveTrue();
-                String menuString = foods.stream()
-                        .map(f -> f.getFoodName() + " ($" + f.getPrice() + ")"
-                                + (f.getAllergies() != null && !f.getAllergies().isEmpty()
-                                    ? " Contains: " + String.join(", ", f.getAllergies())
-                                    : " No common allergens"))
-                        .collect(Collectors.joining("; "));
+            // Fetch menu from DB
+            List<Food> foods = foodRepository.findByActiveTrue();
+            String menuString = foods.stream()
+                    .map(f -> f.getFoodName() + " ($" + f.getPrice() + ")"
+                            + (f.getAllergies() != null && !f.getAllergies().isEmpty()
+                                ? " Contains: " + String.join(", ", f.getAllergies())
+                                : " No common allergens"))
+                    .collect(Collectors.joining("; "));
 
-                conversation.add(ChatTurn.system("Available foods with prices and allergies: " + menuString));
-            }
-
-            return new ChatResponseDto(chatModelClient.complete(conversation));
-
-        } catch (Exception e) {
-            return new ChatResponseDto("Error: " + e.getMessage());
+            conversation.add(ChatTurn.system("Available foods with prices and allergies: " + menuString));
         }
+
+        return new ChatResponseDto(chatModelClient.complete(conversation));
     }
 }

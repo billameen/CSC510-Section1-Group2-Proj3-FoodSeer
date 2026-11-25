@@ -75,18 +75,19 @@ def test_the_assistant_answers_a_greeting(customer):
     OLLAMA_UP, reason="only meaningful with Ollama stopped -- stop it and rerun"
 )
 def test_an_unreachable_model_is_reported_as_a_failure(customer):
-    """This proves extension 4a, and it is the code-rot finding.
+    """This proves extension 4a.
 
-    Expected to fail. ChatServiceImpl wraps the whole call in catch (Exception)
-    and returns 200 with "Error: Connection refused" in the same field a real
-    answer would use. The client has no way to tell the two apart, and the
-    user is shown raw exception text as though the assistant had said it.
+    This used to fail: ChatServiceImpl caught every exception and returned 200
+    with "Error: Connection refused" in the field a real answer uses. It now
+    answers 503 with a JSON message the frontend can show as "assistant
+    unavailable".
     """
     status, body = api_request(
         "POST", "/api/chat", {"message": "hello"}, token=customer, timeout=60
     )
 
-    assert status >= 500, (
+    assert status == 503, (
         f"backend hid an unreachable model behind {status} "
         f"with body {body.get('message')!r}"
     )
+    assert "unavailable" in body["message"].lower(), body

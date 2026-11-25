@@ -4,6 +4,7 @@ import FoodSeer.chat.ChatModelClient;
 import FoodSeer.dto.ChatRequestDto;
 import FoodSeer.dto.ChatResponseDto;
 import FoodSeer.entity.Food;
+import FoodSeer.exception.ChatUnavailableException;
 import FoodSeer.repositories.FoodRepository;
 import FoodSeer.service.impl.ChatServiceImpl;
 
@@ -89,19 +90,15 @@ public class ChatServiceImplTest {
     }
 
     @Test
-    void test_ErrorHandling_NoCrash() {
+    void test_UnavailableModel_IsNotDisguisedAsAReply() {
         ChatRequestDto req = new ChatRequestDto();
-        req.setMessage("Cause error");
+        req.setMessage("hello");
 
-        // Force an exception from the model
-        when(chatModelClient.complete(anyList())).thenThrow(new RuntimeException("model error"));
+        when(chatModelClient.complete(anyList()))
+                .thenThrow(new ChatUnavailableException("The food assistant is unavailable right now."));
 
-        ChatResponseDto res = chatService.sendMessage(req);
-
-        assertNotNull(res);
-        String resp = extractResponse(res);
-        assertNotNull(resp);
-        assertTrue(resp.contains("Error:") || resp.toLowerCase().contains("error"));
+        // The exception reaches GlobalExceptionHandler, which answers 503.
+        assertThrows(ChatUnavailableException.class, () -> chatService.sendMessage(req));
     }
 
     @Test

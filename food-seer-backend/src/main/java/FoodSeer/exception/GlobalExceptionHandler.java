@@ -131,6 +131,23 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * The chat model is not running, timed out, is not installed, or sent back
+     * no answer. 503 lets the client show "assistant unavailable" instead of
+     * treating an error as the assistant's reply.
+     *
+     * @param ex
+     *            The thrown exception
+     * @param request
+     *            The web request
+     * @return 503 with a message that is safe to show
+     */
+    @ExceptionHandler ( ChatUnavailableException.class )
+    public ResponseEntity<ErrorDetails> handleChatUnavailable ( final ChatUnavailableException ex,
+            final WebRequest request ) {
+        return respond( HttpStatus.SERVICE_UNAVAILABLE, ex.getMessage(), request );
+    }
+
+    /**
      * Two requests changed the same order at once (the @Version check), for
      * example two drivers claiming it. The first wins.
      *
