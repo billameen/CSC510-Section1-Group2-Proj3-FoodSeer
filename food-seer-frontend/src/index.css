@@ -1843,6 +1843,20 @@ code {
   color: white;
 }
 
+.message.assistant.error .message-content {
+  background: #fff4f4;
+  border-color: #f5c2c7;
+  color: #842029;
+}
+
+.chat-notice {
+  margin: 8px 0 0 0;
+  padding-top: 8px;
+  border-top: 1px dashed #e0e0e0;
+  font-size: 13px;
+  color: #856404;
+}
+
 .message-content.typing {
   padding: 20px;
   display: flex;
