@@ -1,0 +1,56 @@
+name: Chat Safety Eval
+
+# Runs ChatSafetyEval: the real chat service against a mocked, adversarial
+# model, with 0 unsafe, out-of-stock or invented dishes allowed to reach the
+# customer. It needs no Ollama. The report goes to the job summary, and the
+# job fails if any unsafe dish gets through.
+#
+# Like M0 Eval, it runs on pushes to main and development, on pull requests
+# into either, and on demand (Actions tab > Chat Safety Eval > Run workflow).
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chat-eval:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'maven'
+
+      - name: Run the chat safety eval
+        working-directory: food-seer-backend
+        # Retry dependency downloads that Maven Central answers with 429/502/503/504.
+        run: mvn -B -Daether.connector.http.retryHandler.count=5 -Daether.connector.http.retryHandler.serviceUnavailable=429,502,503,504 -Dtest=ChatSafetyEval -Dsurefire.failIfNoSpecifiedTests=false test
+
+      - name: Publish the report to the job summary
+        if: always()
+        working-directory: food-seer-backend
+        run: |
+          if [ -f target/chat-eval/chat-safety-report.md ]; then
+            cat target/chat-eval/chat-safety-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No chat safety report was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chat-safety-report
+          path: food-seer-backend/target/chat-eval/
