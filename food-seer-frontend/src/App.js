@@ -22,6 +22,7 @@ import DriverDashboard from './pages/DriverDashboard';
 import AllergyIncidents from './pages/AllergyIncidents';
 import SafetyNotices from './pages/SafetyNotices';
 import { isAuthenticated } from './services/api';
+import { LiveUpdatesProvider } from './live/LiveUpdates';
 
 // Protected Route component
 const ProtectedRoute = ({ children }) => {
@@ -43,6 +44,8 @@ const AppLayout = ({ children }) => {
 function App() {
   return (
     <Router>
+      {/* One live-update stream per tab, shared by every page (M6). */}
+      <LiveUpdatesProvider>
       <div className="App">
         <Routes>
           {/* Public routes */}
@@ -235,6 +238,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </div>
+      </LiveUpdatesProvider>
     </Router>
   );
 }

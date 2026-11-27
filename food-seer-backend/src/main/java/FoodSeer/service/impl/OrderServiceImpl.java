@@ -14,12 +14,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
+import FoodSeer.dto.OrderEventDto;
 import FoodSeer.entity.Food;
 import FoodSeer.entity.Order;
 import FoodSeer.entity.OrderLine;
 import FoodSeer.exception.ResourceNotFoundException;
+import FoodSeer.live.OrderEventRecorder;
 import FoodSeer.mapper.OrderMapper;
 import FoodSeer.entity.User;
+import FoodSeer.repositories.OrderEventRepository;
 import FoodSeer.repositories.OrderRepository;
 import FoodSeer.service.OrderPricing;
 import FoodSeer.service.OrderService;
@@ -54,6 +57,13 @@ public class OrderServiceImpl implements OrderService {
     /** Every status change goes through here. */
     @Autowired
     private OrderStateMachine stateMachine;
+
+    @Autowired
+    private OrderEventRepository orderEventRepository;
+
+    /** Records each order's timeline. */
+    @Autowired
+    private OrderEventRecorder timeline;
 
     /**
      * Creates an order for the signed-in customer and reserves its stock, all
@@ -103,6 +113,7 @@ public class OrderServiceImpl implements OrderService {
         order.setAllergyRestrictions(currentUser.getDietaryRestrictions());
         
         final Order savedOrder = orderRepository.save(order);
+        timeline.placed(savedOrder, currentUser);
         return OrderMapper.mapToOrderDto(savedOrder);
     }
 
@@ -275,5 +286,14 @@ public class OrderServiceImpl implements OrderService {
         return activeOrders.stream()
             .map(OrderMapper::mapToOrderDto)
             .collect(Collectors.toList());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<OrderEventDto> getOrderEvents(final Long id) {
+        if (!orderRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Order does not exist with id " + id);
+        }
+        return orderEventRepository.findByOrderIdOrderByIdAsc(id).stream().map(OrderEventDto::of).toList();
     }
 }

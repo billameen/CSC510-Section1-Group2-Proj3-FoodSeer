@@ -9,6 +9,8 @@ import {
   getAllergyHandoffStatus
 } from '../services/api';
 import { staffCanCancel, statusBadge } from '../data/orderStatus';
+import { useLiveRefresh, LiveStatus } from '../live/LiveUpdates';
+import OrderTimeline from '../components/OrderTimeline';
 
 const OrderManagement = () => {
   const [unfulfilledOrders, setUnfulfilledOrders] = useState([]);
@@ -68,6 +70,9 @@ const OrderManagement = () => {
     fetchOrders();
   }, []);
 
+  // New orders, claims, pickups and cancels show up without a refresh.
+  useLiveRefresh(['order.event'], fetchOrders);
+
   const handleAcknowledgeAllergy = async (orderId) => {
   setProcessing(prev => ({ ...prev, [orderId]: true }));
 
@@ -109,7 +114,7 @@ const OrderManagement = () => {
   return (
     <div className="staff-dashboard-container">
       <div className="dashboard-header">
-        <h1>📦 Order Management</h1>
+        <h1>📦 Order Management <LiveStatus /></h1>
         <div style={{ display: 'flex', gap: '10px' }}>
           {/* Navigate to Order Dashboard page */}
           <button 
@@ -224,6 +229,8 @@ const OrderManagement = () => {
                   )}
                   </div>
                 )}
+
+              <OrderTimeline orderId={order.id} status={order.status} />
 
               <div className="order-items-detail">
                 <h4>Order Items:</h4>

@@ -69,12 +69,16 @@ public class SpringSecurityConfig {
                 .authenticationEntryPoint(authenticationEntryPoint)
                 .accessDeniedHandler(accessDeniedHandler))
             .authorizeHttpRequests( ( authorize ) -> {
-                // Only login and sign-up are open. Everything else needs a valid
+                // Only login, sign-up and the ticketed live stream are open. Everything else needs a valid
                 // token here AND a role rule (@PreAuthorize) on its controller
                 // method, so no endpoint relies on just one of the two. The full
                 // table is docs/authorization-matrix.md.
                 authorize.requestMatchers( "/auth/**" ).permitAll();
                 authorize.requestMatchers( HttpMethod.OPTIONS, "/**" ).permitAll(); // allows preflight
+                // The live stream authenticates with a single-use ticket in the
+                // URL (EventSource can't send headers); the controller checks it.
+                // Getting a ticket still needs a JWT.
+                authorize.requestMatchers( HttpMethod.GET, "/api/stream" ).permitAll();
                 authorize.anyRequest().authenticated();
             })
             // JWT only. HTTP Basic would accept a password on every request

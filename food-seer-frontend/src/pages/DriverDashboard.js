@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   fetchDriverDashboard,
   getCurrentUser,
@@ -10,6 +10,7 @@ import {
   getAllergyHandoffStatus
 } from "../services/api";
 import { ORDER_STATUS } from "../data/orderStatus";
+import { useLiveRefresh, LiveStatus } from "../live/LiveUpdates";
 
 const DriverDashboard = () => {
   const [stats, setStats] = useState(null);
@@ -19,107 +20,97 @@ const DriverDashboard = () => {
   const [error, setError] = useState(null);
   const [allergyStatus, setAllergyStatus] = useState({});
 
-  useEffect(() => {
-    const loadDashboard = async () => {
-      try {
-        const user = await getCurrentUser();
+  // Loads stats, both order lists and the allergy hand-off status. Used on
+  // first load, after the driver's own actions, and whenever a live update
+  // says something changed, so the page never needs a full reload.
+  const refresh = useCallback(async ({ silent = false } = {}) => {
+    try {
+      const user = await getCurrentUser();
 
-        const [
-          dashboardStats,
-          available,
-          active
-        ] = await Promise.all([
-          fetchDriverDashboard(user.username),
-          getAvailableOrders(user.username),
-          getActiveOrders(user.username)
-        ]);
+      const [dashboardStats, available, active] = await Promise.all([
+        fetchDriverDashboard(user.username),
+        getAvailableOrders(user.username),
+        getActiveOrders(user.username),
+      ]);
 
-        setStats(dashboardStats);
-        setAvailableOrders(available);
-        setActiveOrders(active);
+      setStats(dashboardStats);
+      setAvailableOrders(available);
+      setActiveOrders(active);
 
-        // Load allergy acknowledgment statuses for assigned orders.
-        const statusEntries = await Promise.all(
-          active
-            .filter(order => order.allergyRestrictions?.trim())
-            .map(async order => {
-              try {
-                const status = await getAllergyHandoffStatus(order.id);
-                return [order.id, status];
-              } catch (err) {
-                console.error(
-                  `Failed to load allergy status for order ${order.id}:`,
-                  err
-                );
-                return [order.id, null];
-              }
-            })
-        );
+      // Load allergy acknowledgment statuses for assigned orders.
+      const statusEntries = await Promise.all(
+        active
+          .filter(order => order.allergyRestrictions?.trim())
+          .map(async order => {
+            try {
+              const status = await getAllergyHandoffStatus(order.id);
+              return [order.id, status];
+            } catch (err) {
+              console.error(`Failed to load allergy status for order ${order.id}:`, err);
+              return [order.id, null];
+            }
+          })
+      );
 
-setAllergyStatus(Object.fromEntries(statusEntries));
-
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load dashboard data.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadDashboard();
+      setAllergyStatus(Object.fromEntries(statusEntries));
+    } catch (err) {
+      console.error(err);
+      // Only the first load replaces the page; a failed refresh keeps what is shown.
+      if (!silent) setError("Failed to load dashboard data.");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleClaim = async (orderId) => {
-  try {
-    await claimOrder(orderId);
-    window.location.reload();
-  } catch (err) {
-    console.error(err);
-    // A 409 here usually means another driver claimed it first, so show why
-    // and reload the lists rather than replacing the whole dashboard.
-    alert(err.message || "Failed to claim order.");
-    window.location.reload();
-  }
-};
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
-const handleAcknowledge = async (orderId) => {
-  try {
-    await acknowledgeAllergyHandoff(orderId);
-    window.location.reload();
-  } catch (err) {
-    console.error(err);
-    setError(err.message || "Failed to acknowledge allergy warning.");
-  }
-};
+  // New orders appear, orders another driver claims disappear, and the
+  // restaurant's allergy acknowledgement shows up, all without a refresh.
+  useLiveRefresh(["order.event"], () => refresh({ silent: true }));
+
+  const handleClaim = async (orderId) => {
+    try {
+      await claimOrder(orderId);
+    } catch (err) {
+      console.error(err);
+      // A 409 here usually means another driver claimed it first.
+      alert(err.message || "Failed to claim order.");
+    }
+    await refresh({ silent: true });
+  };
+
+  const handleAcknowledge = async (orderId) => {
+    try {
+      await acknowledgeAllergyHandoff(orderId);
+    } catch (err) {
+      console.error(err);
+      alert(err.message || "Failed to acknowledge allergy warning.");
+    }
+    await refresh({ silent: true });
+  };
 
   const handlePickUp = async (orderId) => {
     try {
       const user = await getCurrentUser();
-
       await updateOrderStatus(orderId, ORDER_STATUS.PICKED_UP, user.username);
-
-      // 🔁 Force refresh (as requested)
-      window.location.reload();
-
     } catch (err) {
       console.error(err);
       alert(err.message || "Failed to pick up order.");
     }
+    await refresh({ silent: true });
   };
 
   const handleDeliver = async (orderId) => {
     try {
       const user = await getCurrentUser();
-
       await updateOrderStatus(orderId, ORDER_STATUS.DELIVERED, user.username);
-
-      // 🔁 Force refresh (as requested)
-      window.location.reload();
-
     } catch (err) {
       console.error(err);
       alert(err.message || "Failed to deliver order.");
     }
+    await refresh({ silent: true });
   };
 
   if (loading) {
@@ -132,6 +123,7 @@ const handleAcknowledge = async (orderId) => {
 
   return (
     <div className="driver-dashboard-page">
+      <div className="driver-live-row"><LiveStatus /></div>
 
       {/* ---------------- Stats ---------------- */}
       <div className="dashboard-stats">
