@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://localhost:8080';
+export const API_BASE_URL = 'http://localhost:8080';
 
 const TOKEN_KEY = 'token';
 const USERNAME_KEY = 'username';
@@ -613,4 +613,14 @@ export const acknowledgeNotification = async (notificationId) => {
     method: 'POST',
     fallbackError: 'Failed to acknowledge the notice',
   });
+};
+
+// Live updates (M6): trade the JWT for a single-use ticket to open the stream.
+export const getStreamTicket = async () => {
+  return request('/api/stream/ticket', { method: 'POST', fallbackError: 'Failed to start live updates' });
+};
+
+// An order's timeline, oldest first.
+export const getOrderEvents = async (orderId) => {
+  return request(`/api/orders/${orderId}/events`, { fallbackError: 'Failed to load the order timeline' });
 };

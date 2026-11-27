@@ -17,6 +17,8 @@ import {
   customerCanCancel,
   statusBadge,
 } from '../data/orderStatus';
+import { useLiveRefresh, LiveStatus } from '../live/LiveUpdates';
+import OrderTimeline from '../components/OrderTimeline';
 
 const Orders = () => {
   const [orders, setOrders] = useState([]);
@@ -47,6 +49,10 @@ const Orders = () => {
   useEffect(() => {
     fetchOrders();
   }, [navigate]);
+
+  // Status changes (claimed, on the way, delivered) and new safety notices
+  // appear without a refresh.
+  useLiveRefresh(['order.event', 'safety.notice'], () => fetchOrders());
 
   const fetchOrders = async () => {
     try {
@@ -208,7 +214,7 @@ const Orders = () => {
   return (
     <div className="orders-container">
       <div className="orders-header">
-        <h1>📦 My Orders</h1>
+        <h1>📦 My Orders <LiveStatus /></h1>
         <div className="header-actions">
           <button className="create-button" onClick={handleCreateOrder}>
             Create New Order
@@ -318,6 +324,8 @@ const Orders = () => {
                     </div>
                   )}
                 </div>
+
+                <OrderTimeline orderId={order.id} status={order.status} />
 
                 <div className="order-items">
                   <h4>Items:</h4>

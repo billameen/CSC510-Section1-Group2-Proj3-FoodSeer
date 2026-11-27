@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { logout, getCurrentUser, getMyUnreadNotificationCount } from '../services/api';
+import { useLiveRefresh } from '../live/LiveUpdates';
 
 const Navigation = () => {
   const [user, setUser] = useState(null);
@@ -27,23 +28,27 @@ const Navigation = () => {
     navigate('/');
   };
 
-  // Customers: keep the unread food safety notice count fresh on every page change.
-  useEffect(() => {
-    const fetchUnreadNotices = async () => {
-      if (user?.role !== 'ROLE_CUSTOMER') {
-        setUnreadNotices(0);
-        return;
-      }
-      try {
-        const count = await getMyUnreadNotificationCount();
-        setUnreadNotices(count);
-      } catch (error) {
-        console.error('Error fetching safety notices:', error);
-      }
-    };
+  // Customers: keep the unread food safety notice count fresh on every page
+  // change, and the moment a new notice is pushed live (M6), so an allergy
+  // alert shows up on whatever page the customer is on.
+  const fetchUnreadNotices = useCallback(async () => {
+    if (user?.role !== 'ROLE_CUSTOMER') {
+      setUnreadNotices(0);
+      return;
+    }
+    try {
+      const count = await getMyUnreadNotificationCount();
+      setUnreadNotices(count);
+    } catch (error) {
+      console.error('Error fetching safety notices:', error);
+    }
+  }, [user]);
 
+  useEffect(() => {
     fetchUnreadNotices();
-  }, [user, location]);
+  }, [fetchUnreadNotices, location]);
+
+  useLiveRefresh(['safety.notice'], fetchUnreadNotices, 0);
 
   const isAdmin = user?.role === 'ROLE_ADMIN';
   const isStaff = user?.role === 'ROLE_STAFF' || isAdmin;

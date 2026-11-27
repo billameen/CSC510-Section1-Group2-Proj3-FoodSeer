@@ -4,6 +4,7 @@ import java.util.List;
 
 import FoodSeer.dto.NewOrderRequest;
 import FoodSeer.dto.OrderDto;
+import FoodSeer.dto.OrderEventDto;
 import FoodSeer.exception.ResourceNotFoundException;
 
 /**
@@ -88,4 +89,13 @@ public interface OrderService {
     List<OrderDto> getAvailableOrders();
 
     List<OrderDto> getActiveOrders(String username);
+
+    /**
+     * @param id
+     *            the order
+     * @return its timeline, oldest first
+     * @throws FoodSeer.exception.ResourceNotFoundException
+     *             if there is no such order
+     */
+    List<OrderEventDto> getOrderEvents(Long id);
 }
