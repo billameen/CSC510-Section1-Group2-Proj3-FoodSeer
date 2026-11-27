@@ -61,6 +61,12 @@ class GlobalExceptionHandlerTest {
             throw new NullPointerException("secret internal detail at FoodSeer.SomeClass");
         }
 
+        @GetMapping("/unavailable")
+        String unavailable() {
+            throw new ChatUnavailableException("The food assistant is unavailable right now.",
+                    new java.net.ConnectException("Connection refused"));
+        }
+
         @GetMapping("/number")
         String number(@RequestParam final Long id) {
             return "ok " + id;
@@ -97,6 +103,13 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.message").value("Already rated"));
         mvc.perform(get("/bad")).andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("Rating must be between 0 and 5"));
+    }
+
+    @Test
+    void anUnavailableChatModelIs503WithAJsonMessage() throws Exception {
+        mvc.perform(get("/unavailable")).andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.message").value("The food assistant is unavailable right now."))
+                .andExpect(content().string(not(containsString("Connection refused"))));
     }
 
     @Test

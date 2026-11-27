@@ -48,15 +48,44 @@ def test_the_assistant_cannot_be_used_without_logging_in():
 def test_a_driver_cannot_use_the_assistant():
     """This proves extension 1a.
 
-    DRIVER is missing from this endpoint's role list while it is present on the
-    order endpoints. Passing here documents the inconsistency rather than
-    endorsing it -- see the use case.
+    Drivers are left out on purpose: the assistant recommends dishes to order
+    and only customers can place orders. See the Chat section of
+    docs/authorization-matrix.md.
     """
     _, driver = register_and_login("driver", "hungry_driver")
 
     status, body = api_request("POST", "/api/chat", {"message": "hello"}, token=driver)
 
     assert status == 403, body
+
+
+def test_a_blank_message_is_rejected(customer):
+    """A blank question is a 400 and never reaches the model, so this needs no Ollama."""
+    status, body = api_request("POST", "/api/chat", {"message": "   "}, token=customer)
+
+    assert status == 400, body
+
+
+@pytest.mark.skipif(not OLLAMA_UP, reason="no Ollama on localhost:11434")
+def test_suggested_dishes_are_real_menu_dishes(customer):
+    """Every card in the answer is a dish on the menu, with its id.
+
+    The response always has reply text, a list of dish cards, and a notice that
+    is only set when a suggestion was left out (see docs/chatbot-safety.md).
+    """
+    status, body = api_request(
+        "POST", "/api/chat", {"message": "what should I eat?", "history": []},
+        token=customer, timeout=120,
+    )
+
+    assert status == 200, body
+    assert body["message"].strip()
+    assert isinstance(body["foods"], list)
+    assert "notice" in body
+    _, menu = api_request("GET", "/api/foods", token=customer)
+    menu_ids = {food["id"] for food in menu}
+    for card in body["foods"]:
+        assert card["id"] in menu_ids, card
 
 
 @pytest.mark.skipif(not OLLAMA_UP, reason="no Ollama on localhost:11434")
@@ -75,18 +104,19 @@ def test_the_assistant_answers_a_greeting(customer):
     OLLAMA_UP, reason="only meaningful with Ollama stopped -- stop it and rerun"
 )
 def test_an_unreachable_model_is_reported_as_a_failure(customer):
-    """This proves extension 4a, and it is the code-rot finding.
+    """This proves extension 4a.
 
-    Expected to fail. ChatServiceImpl wraps the whole call in catch (Exception)
-    and returns 200 with "Error: Connection refused" in the same field a real
-    answer would use. The client has no way to tell the two apart, and the
-    user is shown raw exception text as though the assistant had said it.
+    This used to fail: ChatServiceImpl caught every exception and returned 200
+    with "Error: Connection refused" in the field a real answer uses. It now
+    answers 503 with a JSON message the frontend can show as "assistant
+    unavailable".
     """
     status, body = api_request(
         "POST", "/api/chat", {"message": "hello"}, token=customer, timeout=60
     )
 
-    assert status >= 500, (
+    assert status == 503, (
         f"backend hid an unreachable model behind {status} "
         f"with body {body.get('message')!r}"
     )
+    assert "unavailable" in body["message"].lower(), body

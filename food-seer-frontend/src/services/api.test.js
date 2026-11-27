@@ -1,4 +1,4 @@
-import { request, login, deleteUser, cancelOrder } from './api';
+import { request, login, deleteUser, cancelOrder, sendChatMessage } from './api';
 
 const jsonResponse = (status, body) => ({
   ok: status >= 200 && status < 300,
@@ -134,5 +134,29 @@ describe('request()', () => {
     fetch.mockResolvedValue(jsonResponse(409, { message: 'Order is already Claimed.' }));
 
     await expect(cancelOrder(7)).rejects.toMatchObject({ status: 409, message: 'Order is already Claimed.' });
+  });
+
+  test('sendChatMessage posts the message with the conversation history', async () => {
+    localStorage.setItem('token', 'abc');
+    fetch.mockResolvedValue(jsonResponse(200, { message: 'Hi', foods: [], notice: null }));
+    const history = [{ role: 'user', content: 'something sweet' }];
+
+    const reply = await sendChatMessage('anything cheaper?', history);
+
+    const [url, options] = fetch.mock.calls[0];
+    expect(url).toBe('http://localhost:8080/api/chat');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({ message: 'anything cheaper?', history });
+    expect(reply.message).toBe('Hi');
+  });
+
+  test('sendChatMessage passes on a 503 so the page can say the assistant is down', async () => {
+    localStorage.setItem('token', 'abc');
+    fetch.mockResolvedValue(jsonResponse(503, { message: 'The food assistant is unavailable right now.' }));
+
+    await expect(sendChatMessage('hi')).rejects.toMatchObject({
+      status: 503,
+      message: 'The food assistant is unavailable right now.',
+    });
   });
 });

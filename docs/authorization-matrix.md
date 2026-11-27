@@ -109,7 +109,15 @@ Two rules apply to every row:
 
 | Method | Path | Anon | Customer | Driver | Staff | Admin | Notes |
 |---|---|---|---|---|---|---|---|
-| POST | `/api/chat` | 401 | ✅ | 403 | ✅ | ✅ | |
+| POST | `/api/chat` | 401 | ✅ | 403 | ✅ | ✅ | Drivers excluded on purpose, see below |
+
+Drivers cannot use the assistant (decided in Milestone 4). The assistant's job
+is to recommend dishes to order, and only customers can place orders
+(`POST /api/orders` is customer-only), so a driver would get suggestions they
+cannot act on. Staff and admins keep access so they can check what customers
+are told; the **AI Assistant** link itself is only shown to customers. If
+drivers ever need it, add `DRIVER` to the `@PreAuthorize` on
+`ChatController` and change this row and `AuthorizationMatrixTest` together.
 
 ## Errors
 
@@ -120,6 +128,7 @@ Error bodies never include stack traces or SQL. `GlobalExceptionHandler` maps:
 | `AccessDeniedException`, `SecurityException` | 403 |
 | `ResourceNotFoundException` | 404 |
 | `IllegalStateException` | 409 |
+| `ChatUnavailableException` (chat model down, too slow, or not installed) | 503 |
 | `IllegalArgumentException`, unreadable body, missing or mistyped parameter | 400 |
 | Anything else | 500 with a generic message; the details go to the server log only |
 
