@@ -13,6 +13,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,11 +37,15 @@ import FoodSeer.repositories.OutboxEventRepository;
 import FoodSeer.repositories.UserRepository;
 
 /**
- * The live stream over real HTTP, with the real scheduled dispatcher (the
- * only test context that turns scheduling on).
+ * The live stream over real HTTP.
+ *
+ * Scheduling stays off, as in every test context: Spring keeps contexts alive
+ * for the whole run and they share one database, so a context with a live
+ * dispatcher would keep sending (and stamping) other tests' messages after
+ * this class finished. Instead this test runs the dispatcher every 200 ms and
+ * the heartbeat every 500 ms on its own thread, stopped after each test.
  */
-@SpringBootTest ( webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = { "app.live.scheduling-enabled=true", "app.stream.heartbeat-ms=500" } )
+@SpringBootTest ( webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT )
 class LiveStreamIntegrationTest {
 
     private static final HttpClient HTTP = HttpClient.newBuilder().version( HttpClient.Version.HTTP_1_1 ).build();
@@ -58,6 +65,10 @@ class LiveStreamIntegrationTest {
     private OutboxEventRepository outbox;
     @Autowired
     private StreamBroker          broker;
+    @Autowired
+    private OutboxDispatcher      dispatcher;
+
+    private ScheduledExecutorService jobs;
     @Autowired
     private PasswordEncoder       passwordEncoder;
 
@@ -81,6 +92,9 @@ class LiveStreamIntegrationTest {
 
     @BeforeEach
     void setUp () throws Exception {
+        jobs = Executors.newScheduledThreadPool( 2 );
+        jobs.scheduleWithFixedDelay( () -> quietly( dispatcher::dispatch ), 0, 200, TimeUnit.MILLISECONDS );
+        jobs.scheduleWithFixedDelay( () -> quietly( broker::heartbeat ), 500, 500, TimeUnit.MILLISECONDS );
         food = foodRepository.save( new Food( "LIVE SOUP " + run.toUpperCase(), 50, 5, new ArrayList<>() ) );
         customer = register( "livecust", "CUSTOMER" );
         bystander = register( "livebystander", "CUSTOMER" );
@@ -91,14 +105,26 @@ class LiveStreamIntegrationTest {
     }
 
     @AfterEach
-    void tearDown () {
+    void tearDown () throws InterruptedException {
         streams.forEach( SseClient::close );
+        // Let the heartbeat notice the closed streams, then stop both jobs.
+        Thread.sleep( 600 );
+        jobs.shutdownNow();
         orderIds.forEach( id -> {
             outbox.deleteAll( outbox.findByOrderIdOrderByIdAsc( id ) );
             events.deleteAll( events.findByOrderIdOrderByIdAsc( id ) );
         } );
         orderRepository.deleteAllById( orderIds );
         foodRepository.delete( food );
+    }
+
+    private static void quietly ( final Runnable job ) {
+        try {
+            job.run();
+        }
+        catch ( final RuntimeException e ) {
+            // Retried on the next tick, like the real schedule.
+        }
     }
 
     // ---- HTTP helpers ----

@@ -109,7 +109,7 @@ Spring Boot's default "open entity manager in view" keeps a request's database s
 | `OutboxTest` (real commits) | Each change writes one event and one message with the right recipients; refused changes write neither; a message that fails to send 3 times is delivered on the next run; a trace-back alert goes only to the exposed customer. |
 | `OutboxDispatcherTest` | Messages go out in order; a failure mid-batch holds back everything after it; purge drops sent messages older than 24 h. |
 | `StreamTicketServiceTest` | Tickets work once, expire after 30 s, and are random 256-bit values. |
-| `LiveStreamIntegrationTest` (real HTTP, real dispatcher) | The customer hears a claim within 1 s and another customer hears nothing. Drivers see new and claimed orders but nothing after that. Reconnecting with the last event id replays exactly the 3 missed events, in order. Ticket reuse and a missing ticket are 401, and a 4th stream is 429. Heartbeats free a closed stream's slot. 15 open streams don't starve the database. |
+| `LiveStreamIntegrationTest` (real HTTP, dispatcher every 200 ms) | The customer hears a claim within 1 s and another customer hears nothing. Drivers see new and claimed orders but nothing after that. Reconnecting with the last event id replays exactly the 3 missed events, in order. Ticket reuse and a missing ticket are 401, and a 4th stream is 429. Heartbeats free a closed stream's slot. 15 open streams don't starve the database. |
 | `AuthorizationMatrixTest` | Rows for `GET /api/orders/{id}/events`, `POST /api/stream/ticket` and `GET /api/stream` for every role, plus ownership checks on the timeline. |
 | `LiveOrderUpdatesTest` (Selenium, two browsers) | The driver claims, picks up and delivers while the customer's My Orders page shows each step, and the page is never reloaded. |
 | Jest | `liveConnection.test.js`: repeats dropped, reconnect with the last id, backoff, polling fallback and recovery. `LiveUpdates.test.js`: one stream per tab, bursts batched. `DriverDashboard.test.js`: a claimed order disappears live. `OrderTimeline.test.js`. `noFullPageReloads.test.js`: no `window.location.reload` anywhere in `src/`. |
@@ -120,7 +120,7 @@ PIT kills 100% of mutants in `OrderStateMachine`, `OrderEventRecorder`, `OutboxD
 
 | Property | Default | Meaning |
 | :- | :- | :- |
-| `app.live.scheduling-enabled` | `true` | Runs the dispatcher, purge and heartbeats. The tests turn it off in `src/test/resources/application-default.properties`, because every cached test context shares one database and their dispatchers would race for the same rows. |
+| `app.live.scheduling-enabled` | `true` | Runs the dispatcher, purge and heartbeats. The tests turn it off in `src/test/resources/application-default.properties`: Spring keeps every test context alive for the whole run and they share one database, so a live dispatcher in any of them would send (and stamp as sent) other tests' messages. Tests that need the jobs run them on their own thread and stop it afterwards. |
 | `app.outbox.dispatch-interval-ms` | `200` | How often committed messages are sent |
 | `app.outbox.retention-hours` | `24` | How long sent messages are kept for resuming |
 | `app.stream.ticket-ttl-seconds` | `30` | How long a stream ticket is valid |

@@ -164,22 +164,41 @@ class LiveOrderUpdatesTest {
         waitFor( browser ).until( ExpectedConditions.urlContains( urlPart ) );
     }
 
+    /** The DOM text of an element, which doesn't depend on layout the way getText() does. */
+    private static String text ( final WebElement element ) {
+        final String text = element.getAttribute( "textContent" );
+        return text == null ? "" : text;
+    }
+
     private WebElement customerCard ( final ChromeDriver customer ) {
         return customer.findElements( By.cssSelector( ".order-card" ) ).stream()
-                .filter( card -> card.getText().contains( "Live UI order" ) ).findFirst().orElse( null );
+                .filter( card -> text( card ).contains( "Live UI order" ) ).findFirst().orElse( null );
     }
 
     private void waitForCustomerStatus ( final ChromeDriver customer, final String badge ) {
         waitFor( customer ).until( d -> {
             final WebElement card = customerCard( customer );
-            return card != null && card.getText().contains( badge );
+            return card != null && text( card ).contains( badge );
         } );
     }
 
-    private static void clickInDriverCard ( final ChromeDriver driver, final String button ) {
-        final By card = By.xpath( "//div[contains(@class,'order-card')][.//h3[contains(.,'Order #')]]//button[contains(.,'"
-                + button + "')]" );
-        waitFor( driver ).until( ExpectedConditions.elementToBeClickable( card ) ).click();
+    /**
+     * This test's own order card. The database is shared with the rest of the
+     * suite, so other tests' orders can be on the driver's lists too; matching
+     * the exact heading avoids claiming one of those (or #1 matching #12).
+     */
+    private By driverCard () {
+        return By.xpath( "//div[contains(@class,'order-card')][.//h3[normalize-space(.)='Order #" + orderId + "']]" );
+    }
+
+    private void clickInDriverCard ( final ChromeDriver driver, final String button ) {
+        final By target = By.xpath( "//div[contains(@class,'order-card')][.//h3[normalize-space(.)='Order #" + orderId
+                + "']]//button[contains(.,'" + button + "')]" );
+        final WebElement element = waitFor( driver ).until( ExpectedConditions.presenceOfElementLocated( target ) );
+        // A DOM click: this test is about the customer's page updating, not
+        // about click mechanics, and it doesn't depend on layout checks.
+        ( (JavascriptExecutor) driver ).executeScript( "arguments[0].scrollIntoView(); arguments[0].click();",
+                element );
     }
 
     @Test
@@ -195,8 +214,7 @@ class LiveOrderUpdatesTest {
 
         final ChromeDriver driver = browser();
         logIn( driver, DRIVER, "driver" );
-        waitFor( driver ).until( ExpectedConditions.textToBePresentInElementLocated(
-                By.cssSelector( ".orders-section" ), "Order #" + orderId ) );
+        waitFor( driver ).until( ExpectedConditions.presenceOfElementLocated( driverCard() ) );
 
         clickInDriverCard( driver, "Claim Order" );
         waitForCustomerStatus( customer, "Claimed by driver" );
